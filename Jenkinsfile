@@ -39,19 +39,6 @@ pipeline {
             }
         }
 
-        stage('Wait Before Destroy') {
-            steps {
-                echo 'Infrastructure created successfully.'
-                echo 'Waiting for 2 minutes...'
-                sleep(time: 2, unit: 'MINUTES')
-            }
-        }
-
-        stage('Terraform Destroy') {
-            steps {
-                sh 'terraform destroy -auto-approve'
-            }
-        }
     }
 
     post {
