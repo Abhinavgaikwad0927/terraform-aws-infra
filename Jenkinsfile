@@ -1,10 +1,9 @@
 pipeline {
-
     agent any
 
     stages {
 
-        stage('Clone') {
+        stage('Clone Repository') {
             steps {
                 checkout scm
             }
@@ -16,37 +15,48 @@ pipeline {
             }
         }
 
-        stage('Validate') {
-            steps {
-                sh 'terraform validate'
-            }
-        }
-
-        stage('Format Check') {
+        stage('Terraform Format Check') {
             steps {
                 sh 'terraform fmt -check'
             }
         }
 
-        stage('Plan') {
+        stage('Terraform Validate') {
             steps {
-                sh 'terraform plan'
+                sh 'terraform validate'
             }
         }
 
-        stage('Apply') {
+        stage('Terraform Plan') {
             steps {
-                input "Deploy Infrastructure?"
-                sh 'terraform apply -auto-approve'
+                sh 'terraform plan -out=tfplan'
             }
         }
-	stage('Destroy') {
-   	    steps {
-        	input "Destroy Infrastructure?"
-       		 sh 'terraform destroy -auto-approve'
-    	   }
-	}
 
+        stage('Terraform Apply') {
+            steps {
+                sh 'terraform apply -auto-approve tfplan'
+            }
+        }
+
+        stage('Wait Before Destroy') {
+            steps {
+                echo 'Infrastructure created successfully.'
+                echo 'Waiting for 2 minutes...'
+                sleep(time: 2, unit: 'MINUTES')
+            }
+        }
+
+        stage('Terraform Destroy') {
+            steps {
+                sh 'terraform destroy -auto-approve'
+            }
+        }
     }
 
+    post {
+        always {
+            cleanWs()
+        }
+    }
 }
