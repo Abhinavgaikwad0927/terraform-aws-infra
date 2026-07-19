@@ -1,5 +1,5 @@
 pipeline {
-    agent any
+    agent { label 'ec2-agent' }
 
     environment {
         REGION          = 'ap-south-1'
