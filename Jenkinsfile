@@ -2,9 +2,8 @@ pipeline {
     agent { label 'ec2-agent' }
 
     environment {
-        REGION          = 'ap-south-1'
-        DYNAMO_TABLE    = 'jenkins-resource-tracker'
-        RESOURCE_PREFIX = 'jenkins-auto'
+        REGION       = 'ap-south-1'
+        DYNAMO_TABLE = 'jenkins-resource-tracker'
     }
 
     stages {
@@ -110,46 +109,83 @@ pipeline {
                     echo "SG_ID       = $SG_ID"
                     echo "INSTANCE_ID = $INSTANCE_ID"
                     echo "PUBLIC_IP   = $PUBLIC_IP"
+                    echo "CREATED_AT  = $CREATED_AT"
 
-                    if [ "$VPC_ID" != "N/A" ]; then
-                        echo "Saving VPC to DynamoDB..."
-                        aws dynamodb put-item \
-                            --table-name jenkins-resource-tracker \
-                            --region ap-south-1 \
-                            --item "{\"ResourceId\":{\"S\":\"$VPC_ID\"},\"ResourceType\":{\"S\":\"VPC\"},\"ResourceName\":{\"S\":\"jenkins-auto-vpc\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
-                        echo "VPC saved: $VPC_ID"
-                    fi
+                    python3 << PYEOF
+import subprocess, json, sys
 
-                    if [ "$SUBNET_ID" != "N/A" ]; then
-                        echo "Saving Subnet to DynamoDB..."
-                        aws dynamodb put-item \
-                            --table-name jenkins-resource-tracker \
-                            --region ap-south-1 \
-                            --item "{\"ResourceId\":{\"S\":\"$SUBNET_ID\"},\"ResourceType\":{\"S\":\"Subnet\"},\"ResourceName\":{\"S\":\"jenkins-auto-subnet\"},\"VpcId\":{\"S\":\"$VPC_ID\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
-                        echo "Subnet saved: $SUBNET_ID"
-                    fi
+vpc_id      = "$VPC_ID"
+subnet_id   = "$SUBNET_ID"
+sg_id       = "$SG_ID"
+instance_id = "$INSTANCE_ID"
+public_ip   = "$PUBLIC_IP"
+created_at  = "$CREATED_AT"
+region      = "ap-south-1"
+table       = "jenkins-resource-tracker"
 
-                    if [ "$SG_ID" != "N/A" ]; then
-                        echo "Saving Security Group to DynamoDB..."
-                        aws dynamodb put-item \
-                            --table-name jenkins-resource-tracker \
-                            --region ap-south-1 \
-                            --item "{\"ResourceId\":{\"S\":\"$SG_ID\"},\"ResourceType\":{\"S\":\"SecurityGroup\"},\"ResourceName\":{\"S\":\"jenkins-auto-sg\"},\"VpcId\":{\"S\":\"$VPC_ID\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
-                        echo "Security Group saved: $SG_ID"
-                    fi
+def save(item):
+    result = subprocess.run(
+        ["aws", "dynamodb", "put-item",
+         "--table-name", table,
+         "--region", region,
+         "--item", json.dumps(item)],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print("ERROR:", result.stderr)
+        sys.exit(1)
+    else:
+        print("Saved:", list(item["ResourceId"].values())[0])
 
-                    if [ "$INSTANCE_ID" != "N/A" ]; then
-                        echo "Saving EC2 Instance to DynamoDB..."
-                        aws dynamodb put-item \
-                            --table-name jenkins-resource-tracker \
-                            --region ap-south-1 \
-                            --item "{\"ResourceId\":{\"S\":\"$INSTANCE_ID\"},\"ResourceType\":{\"S\":\"EC2Instance\"},\"ResourceName\":{\"S\":\"jenkins-auto-ec2\"},\"PublicIp\":{\"S\":\"$PUBLIC_IP\"},\"SubnetId\":{\"S\":\"$SUBNET_ID\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
-                        echo "EC2 saved: $INSTANCE_ID"
-                    fi
+if vpc_id != "N/A":
+    print("Saving VPC...")
+    save({
+        "ResourceId":   {"S": vpc_id},
+        "ResourceType": {"S": "VPC"},
+        "ResourceName": {"S": "jenkins-auto-vpc"},
+        "Region":       {"S": region},
+        "CreatedAt":    {"S": created_at}
+    })
+
+if subnet_id != "N/A":
+    print("Saving Subnet...")
+    save({
+        "ResourceId":   {"S": subnet_id},
+        "ResourceType": {"S": "Subnet"},
+        "ResourceName": {"S": "jenkins-auto-subnet"},
+        "VpcId":        {"S": vpc_id},
+        "Region":       {"S": region},
+        "CreatedAt":    {"S": created_at}
+    })
+
+if sg_id != "N/A":
+    print("Saving Security Group...")
+    save({
+        "ResourceId":   {"S": sg_id},
+        "ResourceType": {"S": "SecurityGroup"},
+        "ResourceName": {"S": "jenkins-auto-sg"},
+        "VpcId":        {"S": vpc_id},
+        "Region":       {"S": region},
+        "CreatedAt":    {"S": created_at}
+    })
+
+if instance_id != "N/A":
+    print("Saving EC2 Instance...")
+    save({
+        "ResourceId":   {"S": instance_id},
+        "ResourceType": {"S": "EC2Instance"},
+        "ResourceName": {"S": "jenkins-auto-ec2"},
+        "PublicIp":     {"S": public_ip},
+        "SubnetId":     {"S": subnet_id},
+        "Region":       {"S": region},
+        "CreatedAt":    {"S": created_at}
+    })
+
+print("All resources saved to DynamoDB successfully!")
+PYEOF
 
                     echo $PUBLIC_IP   > /tmp/public_ip.txt
                     echo $INSTANCE_ID > /tmp/instance_id.txt
-                    echo "All resources saved to DynamoDB successfully!"
                 '''
             }
         }
@@ -160,54 +196,63 @@ pipeline {
                 echo " STAGE 9 — Reading All Resources from DynamoDB"
                 echo "============================================"
                 sh '''
-                    aws dynamodb scan \
-                        --table-name jenkins-resource-tracker \
-                        --region ap-south-1 \
-                        --output json | python3 -c "
-import json, sys
+                    python3 << PYEOF
+import subprocess, json, sys
 
-data = json.load(sys.stdin)
-items = data[\"Items\"]
+result = subprocess.run(
+    ["aws", "dynamodb", "scan",
+     "--table-name", "jenkins-resource-tracker",
+     "--region", "ap-south-1",
+     "--output", "json"],
+    capture_output=True, text=True
+)
+
+if result.returncode != 0:
+    print("ERROR scanning DynamoDB:", result.stderr)
+    sys.exit(1)
+
+data  = json.loads(result.stdout)
+items = data["Items"]
 
 print()
-print(\"*\" * 60)
-print(\"    ALL AWS RESOURCES CREATED BY JENKINS + TERRAFORM\")
-print(\"*\" * 60)
-print(f\"  Total Resources : {len(items)}\")
-print(\"*\" * 60)
+print("*" * 60)
+print("   ALL AWS RESOURCES CREATED BY JENKINS + TERRAFORM")
+print("*" * 60)
+print(f"  Total Resources : {len(items)}")
+print("*" * 60)
 
-order = [\"VPC\",\"Subnet\",\"InternetGateway\",\"SecurityGroup\",\"EC2Instance\"]
+order = ["VPC", "Subnet", "InternetGateway", "SecurityGroup", "EC2Instance"]
 sorted_items = sorted(
     items,
-    key=lambda x: order.index(x.get(\"ResourceType\",{}).get(\"S\",\"\"))
-    if x.get(\"ResourceType\",{}).get(\"S\",\"\") in order else 99
+    key=lambda x: order.index(x.get("ResourceType", {}).get("S", ""))
+    if x.get("ResourceType", {}).get("S", "") in order else 99
 )
 
 for item in sorted_items:
-    rtype = item.get(\"ResourceType\", {}).get(\"S\", \"Unknown\")
-    rid   = item.get(\"ResourceId\",   {}).get(\"S\", \"N/A\")
-    rname = item.get(\"ResourceName\", {}).get(\"S\", \"N/A\")
-    pub   = item.get(\"PublicIp\",     {}).get(\"S\", \"\")
-    priv  = item.get(\"PrivateIp\",    {}).get(\"S\", \"\")
-    vpc   = item.get(\"VpcId\",        {}).get(\"S\", \"\")
-    ts    = item.get(\"CreatedAt\",    {}).get(\"S\", \"\")
+    rtype = item.get("ResourceType", {}).get("S", "Unknown")
+    rid   = item.get("ResourceId",   {}).get("S", "N/A")
+    rname = item.get("ResourceName", {}).get("S", "N/A")
+    pub   = item.get("PublicIp",     {}).get("S", "")
+    priv  = item.get("PrivateIp",    {}).get("S", "")
+    vpc   = item.get("VpcId",        {}).get("S", "")
+    ts    = item.get("CreatedAt",    {}).get("S", "")
 
     print()
-    print(f\"  Resource Type  : {rtype}\")
-    print(f\"  Resource ID    : {rid}\")
-    print(f\"  Resource Name  : {rname}\")
-    if vpc:  print(f\"  VPC ID         : {vpc}\")
-    if pub:  print(f\"  Public IP      : {pub}  <--- EC2 PUBLIC IP\")
-    if priv: print(f\"  Private IP     : {priv}\")
-    print(f\"  Created At     : {ts}\")
-    print(\"-\" * 60)
+    print(f"  Resource Type  : {rtype}")
+    print(f"  Resource ID    : {rid}")
+    print(f"  Resource Name  : {rname}")
+    if vpc:  print(f"  VPC ID         : {vpc}")
+    if pub:  print(f"  Public IP      : {pub}  <--- EC2 PUBLIC IP")
+    if priv: print(f"  Private IP     : {priv}")
+    print(f"  Created At     : {ts}")
+    print("-" * 60)
 
 print()
-print(\"*\" * 60)
-print(\"         END OF RESOURCE SUMMARY\")
-print(\"*\" * 60)
+print("*" * 60)
+print("           END OF RESOURCE SUMMARY")
+print("*" * 60)
 print()
-"
+PYEOF
                 '''
             }
         }
