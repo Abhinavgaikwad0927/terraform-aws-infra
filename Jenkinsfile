@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'ec2-agent' }
+    agent any
 
     environment {
         REGION          = 'ap-south-1'
@@ -9,18 +9,12 @@ pipeline {
 
     stages {
 
-        // ─────────────────────────────────────────
-        // STAGE 1 — CLONE REPOSITORY
-        // ─────────────────────────────────────────
         stage('Clone Repository') {
             steps {
                 checkout scm
             }
         }
 
-        // ─────────────────────────────────────────
-        // STAGE 2 — CREATE DYNAMODB TABLE
-        // ─────────────────────────────────────────
         stage('Create DynamoDB Table') {
             steps {
                 echo "============================================"
@@ -28,39 +22,31 @@ pipeline {
                 echo "============================================"
                 sh '''
                     TABLE_EXISTS=$(aws dynamodb list-tables \
-                        --region $REGION \
-                        --query "TableNames[?@=='$DYNAMO_TABLE']" \
+                        --region ap-south-1 \
+                        --query "TableNames[?@=='jenkins-resource-tracker']" \
                         --output text)
 
                     if [ -z "$TABLE_EXISTS" ]; then
-                        echo "Creating DynamoDB table: $DYNAMO_TABLE"
-
+                        echo "Creating DynamoDB table..."
                         aws dynamodb create-table \
-                            --table-name $DYNAMO_TABLE \
-                            --attribute-definitions \
-                                AttributeName=ResourceId,AttributeType=S \
-                            --key-schema \
-                                AttributeName=ResourceId,KeyType=HASH \
+                            --table-name jenkins-resource-tracker \
+                            --attribute-definitions AttributeName=ResourceId,AttributeType=S \
+                            --key-schema AttributeName=ResourceId,KeyType=HASH \
                             --billing-mode PAY_PER_REQUEST \
-                            --region $REGION
-
-                        echo "Waiting for table to become ACTIVE..."
+                            --region ap-south-1
 
                         aws dynamodb wait table-exists \
-                            --table-name $DYNAMO_TABLE \
-                            --region $REGION
+                            --table-name jenkins-resource-tracker \
+                            --region ap-south-1
 
-                        echo "DynamoDB Table ACTIVE: $DYNAMO_TABLE"
+                        echo "DynamoDB Table ACTIVE"
                     else
-                        echo "Table already exists: $DYNAMO_TABLE — skipping"
+                        echo "Table already exists — skipping"
                     fi
                 '''
             }
         }
 
-        // ─────────────────────────────────────────
-        // STAGE 3 — TERRAFORM INIT
-        // ─────────────────────────────────────────
         stage('Terraform Init') {
             steps {
                 echo "============================================"
@@ -71,17 +57,14 @@ pipeline {
         }
 
         stage('Terraform Format Check') {
-    steps {
-        echo "============================================"
-        echo " STAGE 4 — Terraform Format Check"
-        echo "============================================"
-        sh 'terraform fmt'               // ← auto fixes and continues
-    }
-}
+            steps {
+                echo "============================================"
+                echo " STAGE 4 — Terraform Format Check"
+                echo "============================================"
+                sh 'terraform fmt'
+            }
+        }
 
-        // ─────────────────────────────────────────
-        // STAGE 5 — TERRAFORM VALIDATE
-        // ─────────────────────────────────────────
         stage('Terraform Validate') {
             steps {
                 echo "============================================"
@@ -91,9 +74,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // STAGE 6 — TERRAFORM PLAN
-        // ─────────────────────────────────────────
         stage('Terraform Plan') {
             steps {
                 echo "============================================"
@@ -103,9 +83,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // STAGE 7 — TERRAFORM APPLY
-        // ─────────────────────────────────────────
         stage('Terraform Apply') {
             steps {
                 echo "============================================"
@@ -115,116 +92,68 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // STAGE 8 — SAVE RESOURCES TO DYNAMODB
-        // ─────────────────────────────────────────
         stage('Save Resources to DynamoDB') {
             steps {
                 echo "============================================"
                 echo " STAGE 8 — Saving Resources to DynamoDB"
                 echo "============================================"
                 sh '''
-                    # Get VPC ID from terraform output
                     VPC_ID=$(terraform output -raw vpc_id 2>/dev/null || echo "N/A")
                     SUBNET_ID=$(terraform output -raw subnet_id 2>/dev/null || echo "N/A")
-                    IGW_ID=$(terraform output -raw igw_id 2>/dev/null || echo "N/A")
                     SG_ID=$(terraform output -raw security_group_id 2>/dev/null || echo "N/A")
                     INSTANCE_ID=$(terraform output -raw instance_id 2>/dev/null || echo "N/A")
                     PUBLIC_IP=$(terraform output -raw public_ip 2>/dev/null || echo "N/A")
-                    PRIVATE_IP=$(terraform output -raw private_ip 2>/dev/null || echo "N/A")
+                    CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-                    echo "Saving VPC to DynamoDB..."
+                    echo "VPC_ID      = $VPC_ID"
+                    echo "SUBNET_ID   = $SUBNET_ID"
+                    echo "SG_ID       = $SG_ID"
+                    echo "INSTANCE_ID = $INSTANCE_ID"
+                    echo "PUBLIC_IP   = $PUBLIC_IP"
+
                     if [ "$VPC_ID" != "N/A" ]; then
+                        echo "Saving VPC to DynamoDB..."
                         aws dynamodb put-item \
-                            --table-name $DYNAMO_TABLE \
-                            --item "{
-                                \"ResourceId\":   {\"S\": \"$VPC_ID\"},
-                                \"ResourceType\": {\"S\": \"VPC\"},
-                                \"ResourceName\": {\"S\": \"$RESOURCE_PREFIX-vpc\"},
-                                \"Region\":       {\"S\": \"$REGION\"},
-                                \"CreatedAt\":    {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
-                            }" \
-                            --region $REGION
+                            --table-name jenkins-resource-tracker \
+                            --region ap-south-1 \
+                            --item "{\"ResourceId\":{\"S\":\"$VPC_ID\"},\"ResourceType\":{\"S\":\"VPC\"},\"ResourceName\":{\"S\":\"jenkins-auto-vpc\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
                         echo "VPC saved: $VPC_ID"
                     fi
 
-                    echo "Saving Subnet to DynamoDB..."
                     if [ "$SUBNET_ID" != "N/A" ]; then
+                        echo "Saving Subnet to DynamoDB..."
                         aws dynamodb put-item \
-                            --table-name $DYNAMO_TABLE \
-                            --item "{
-                                \"ResourceId\":   {\"S\": \"$SUBNET_ID\"},
-                                \"ResourceType\": {\"S\": \"Subnet\"},
-                                \"ResourceName\": {\"S\": \"$RESOURCE_PREFIX-subnet\"},
-                                \"VpcId\":        {\"S\": \"$VPC_ID\"},
-                                \"Region\":       {\"S\": \"$REGION\"},
-                                \"CreatedAt\":    {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
-                            }" \
-                            --region $REGION
+                            --table-name jenkins-resource-tracker \
+                            --region ap-south-1 \
+                            --item "{\"ResourceId\":{\"S\":\"$SUBNET_ID\"},\"ResourceType\":{\"S\":\"Subnet\"},\"ResourceName\":{\"S\":\"jenkins-auto-subnet\"},\"VpcId\":{\"S\":\"$VPC_ID\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
                         echo "Subnet saved: $SUBNET_ID"
                     fi
 
-                    echo "Saving Internet Gateway to DynamoDB..."
-                    if [ "$IGW_ID" != "N/A" ]; then
-                        aws dynamodb put-item \
-                            --table-name $DYNAMO_TABLE \
-                            --item "{
-                                \"ResourceId\":   {\"S\": \"$IGW_ID\"},
-                                \"ResourceType\": {\"S\": \"InternetGateway\"},
-                                \"ResourceName\": {\"S\": \"$RESOURCE_PREFIX-igw\"},
-                                \"VpcId\":        {\"S\": \"$VPC_ID\"},
-                                \"Region\":       {\"S\": \"$REGION\"},
-                                \"CreatedAt\":    {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
-                            }" \
-                            --region $REGION
-                        echo "Internet Gateway saved: $IGW_ID"
-                    fi
-
-                    echo "Saving Security Group to DynamoDB..."
                     if [ "$SG_ID" != "N/A" ]; then
+                        echo "Saving Security Group to DynamoDB..."
                         aws dynamodb put-item \
-                            --table-name $DYNAMO_TABLE \
-                            --item "{
-                                \"ResourceId\":   {\"S\": \"$SG_ID\"},
-                                \"ResourceType\": {\"S\": \"SecurityGroup\"},
-                                \"ResourceName\": {\"S\": \"$RESOURCE_PREFIX-sg\"},
-                                \"VpcId\":        {\"S\": \"$VPC_ID\"},
-                                \"Region\":       {\"S\": \"$REGION\"},
-                                \"CreatedAt\":    {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
-                            }" \
-                            --region $REGION
+                            --table-name jenkins-resource-tracker \
+                            --region ap-south-1 \
+                            --item "{\"ResourceId\":{\"S\":\"$SG_ID\"},\"ResourceType\":{\"S\":\"SecurityGroup\"},\"ResourceName\":{\"S\":\"jenkins-auto-sg\"},\"VpcId\":{\"S\":\"$VPC_ID\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
                         echo "Security Group saved: $SG_ID"
                     fi
 
-                    echo "Saving EC2 Instance to DynamoDB..."
                     if [ "$INSTANCE_ID" != "N/A" ]; then
+                        echo "Saving EC2 Instance to DynamoDB..."
                         aws dynamodb put-item \
-                            --table-name $DYNAMO_TABLE \
-                            --item "{
-                                \"ResourceId\":   {\"S\": \"$INSTANCE_ID\"},
-                                \"ResourceType\": {\"S\": \"EC2Instance\"},
-                                \"ResourceName\": {\"S\": \"$RESOURCE_PREFIX-ec2\"},
-                                \"PublicIp\":     {\"S\": \"$PUBLIC_IP\"},
-                                \"PrivateIp\":    {\"S\": \"$PRIVATE_IP\"},
-                                \"SubnetId\":     {\"S\": \"$SUBNET_ID\"},
-                                \"Region\":       {\"S\": \"$REGION\"},
-                                \"CreatedAt\":    {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
-                            }" \
-                            --region $REGION
-                        echo "EC2 Instance saved: $INSTANCE_ID"
+                            --table-name jenkins-resource-tracker \
+                            --region ap-south-1 \
+                            --item "{\"ResourceId\":{\"S\":\"$INSTANCE_ID\"},\"ResourceType\":{\"S\":\"EC2Instance\"},\"ResourceName\":{\"S\":\"jenkins-auto-ec2\"},\"PublicIp\":{\"S\":\"$PUBLIC_IP\"},\"SubnetId\":{\"S\":\"$SUBNET_ID\"},\"Region\":{\"S\":\"ap-south-1\"},\"CreatedAt\":{\"S\":\"$CREATED_AT\"}}"
+                        echo "EC2 saved: $INSTANCE_ID"
                     fi
 
-                    # Save IPs to temp files for post section
-                    echo $PUBLIC_IP  > /tmp/public_ip.txt
-                    echo $PRIVATE_IP > /tmp/private_ip.txt
+                    echo $PUBLIC_IP   > /tmp/public_ip.txt
                     echo $INSTANCE_ID > /tmp/instance_id.txt
+                    echo "All resources saved to DynamoDB successfully!"
                 '''
             }
         }
 
-        // ─────────────────────────────────────────
-        // STAGE 9 — PRINT ALL FROM DYNAMODB
-        // ─────────────────────────────────────────
         stage('Print All Resources from DynamoDB') {
             steps {
                 echo "============================================"
@@ -232,8 +161,8 @@ pipeline {
                 echo "============================================"
                 sh '''
                     aws dynamodb scan \
-                        --table-name $DYNAMO_TABLE \
-                        --region $REGION \
+                        --table-name jenkins-resource-tracker \
+                        --region ap-south-1 \
                         --output json | python3 -c "
 import json, sys
 
@@ -269,13 +198,13 @@ for item in sorted_items:
     print(f\"  Resource Name  : {rname}\")
     if vpc:  print(f\"  VPC ID         : {vpc}\")
     if pub:  print(f\"  Public IP      : {pub}  <--- EC2 PUBLIC IP\")
-    if priv: print(f\"  Private IP     : {priv}  <--- EC2 PRIVATE IP\")
+    if priv: print(f\"  Private IP     : {priv}\")
     print(f\"  Created At     : {ts}\")
     print(\"-\" * 60)
 
 print()
 print(\"*\" * 60)
-print(\"            END OF RESOURCE SUMMARY\")
+print(\"         END OF RESOURCE SUMMARY\")
 print(\"*\" * 60)
 print()
 "
@@ -284,9 +213,6 @@ print()
         }
     }
 
-    // ─────────────────────────────────────────
-    // POST — FINAL SUMMARY + CLEANUP
-    // ─────────────────────────────────────────
     post {
         success {
             sh '''
@@ -295,10 +221,9 @@ print()
                 echo "       PIPELINE COMPLETED SUCCESSFULLY"
                 echo "================================================="
                 echo "  EC2 Public IP  : $(cat /tmp/public_ip.txt)"
-                echo "  EC2 Private IP : $(cat /tmp/private_ip.txt)"
                 echo "  EC2 Instance   : $(cat /tmp/instance_id.txt)"
-                echo "  DynamoDB Table : $DYNAMO_TABLE"
-                echo "  Region         : $REGION"
+                echo "  DynamoDB Table : jenkins-resource-tracker"
+                echo "  Region         : ap-south-1"
                 echo "================================================="
             '''
         }
@@ -310,4 +235,3 @@ print()
         }
     }
 }
-
