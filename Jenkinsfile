@@ -72,7 +72,7 @@ pipeline {
                 echo "============================================"
                 echo " STAGE 3 — Terraform Init"
                 echo "============================================"
-                sh 'terraform init'
+                sh 'terraform init -reconfigure'
             }
         }
 
@@ -205,67 +205,104 @@ PYEOF
         }
 
         // ─────────────────────────────────────────
-        // STAGE 9 — PRINT FROM DYNAMODB (only if false)
-        // ─────────────────────────────────────────
-        stage('Print All Resources from DynamoDB') {
-            when {
-                expression { return params.DESTROY_INFRASTRUCTURE == false }
-            }
-            steps {
-                echo "============================================"
-                echo " STAGE 9 — Reading All Resources from DynamoDB"
-                echo "============================================"
-                sh '''
-                    aws dynamodb scan \
-                        --table-name jenkins-resource-tracker \
-                        --region ap-south-1 \
-                        --output json | python3 -c "
-import json, sys
+// STAGE 9 — PRINT FROM DYNAMODB (only if false)
+// ─────────────────────────────────────────
+stage('Print All Resources from DynamoDB') {
+    when {
+        expression { return params.DESTROY_INFRASTRUCTURE == false }
+    }
+    steps {
+        echo "============================================"
+        echo " STAGE 9 — Reading All Resources from DynamoDB"
+        echo "============================================"
 
-data = json.load(sys.stdin)
-items = data[\"Items\"]
+        sh '''
+python3 << 'PYEOF'
+import subprocess
+import json
+import sys
 
-print()
-print(\"*\" * 60)
-print(\"    ALL AWS RESOURCES CREATED BY JENKINS + TERRAFORM\")
-print(\"*\" * 60)
-print(f\"  Total Resources : {len(items)}\")
-print(\"*\" * 60)
+table = "jenkins-resource-tracker"
+region = "ap-south-1"
 
-order = [\"VPC\",\"Subnet\",\"SecurityGroup\",\"EC2Instance\"]
-sorted_items = sorted(
-    items,
-    key=lambda x: order.index(x.get(\"ResourceType\",{}).get(\"S\",\"\"))
-    if x.get(\"ResourceType\",{}).get(\"S\",\"\") in order else 99
+result = subprocess.run(
+    [
+        "aws",
+        "dynamodb",
+        "scan",
+        "--table-name",
+        table,
+        "--region",
+        region,
+        "--output",
+        "json"
+    ],
+    capture_output=True,
+    text=True
 )
 
-for item in sorted_items:
-    rtype = item.get(\"ResourceType\", {}).get(\"S\", \"Unknown\")
-    rid   = item.get(\"ResourceId\",   {}).get(\"S\", \"N/A\")
-    rname = item.get(\"ResourceName\", {}).get(\"S\", \"N/A\")
-    pub   = item.get(\"PublicIp\",     {}).get(\"S\", \"\")
-    vpc   = item.get(\"VpcId\",        {}).get(\"S\", \"\")
-    ts    = item.get(\"CreatedAt\",    {}).get(\"S\", \"\")
+if result.returncode != 0:
+    print(result.stderr)
+    sys.exit(1)
 
-    print()
-    print(f\"  Resource Type  : {rtype}\")
-    print(f\"  Resource ID    : {rid}\")
-    print(f\"  Resource Name  : {rname}\")
-    if vpc: print(f\"  VPC ID         : {vpc}\")
-    if pub: print(f\"  Public IP      : {pub}  <--- EC2 PUBLIC IP\")
-    print(f\"  Created At     : {ts}\")
-    print(\"-\" * 60)
+data = json.loads(result.stdout)
+items = data.get("Items", [])
 
 print()
-print(\"*\" * 60)
-print(\"         END OF RESOURCE SUMMARY\")
-print(\"*\" * 60)
-print()
-"
-                '''
-            }
-        }
+print("=" * 70)
+print("      ALL AWS RESOURCES CREATED BY JENKINS + TERRAFORM")
+print("=" * 70)
+print("Total Resources :", len(items))
+print("=" * 70)
 
+order = {
+    "VPC": 1,
+    "Subnet": 2,
+    "SecurityGroup": 3,
+    "EC2Instance": 4
+}
+
+items.sort(
+    key=lambda x: order.get(
+        x.get("ResourceType", {}).get("S", ""),
+        99
+    )
+)
+
+for item in items:
+
+    rtype = item.get("ResourceType", {}).get("S", "")
+    rid = item.get("ResourceId", {}).get("S", "")
+    rname = item.get("ResourceName", {}).get("S", "")
+    vpc = item.get("VpcId", {}).get("S", "")
+    subnet = item.get("SubnetId", {}).get("S", "")
+    public = item.get("PublicIp", {}).get("S", "")
+    created = item.get("CreatedAt", {}).get("S", "")
+
+    print("-" * 70)
+    print("Resource Type :", rtype)
+    print("Resource ID   :", rid)
+    print("Name          :", rname)
+
+    if vpc:
+        print("VPC ID        :", vpc)
+
+    if subnet:
+        print("Subnet ID     :", subnet)
+
+    if public:
+        print("Public IP     :", public)
+
+    print("Created At    :", created)
+
+print("-" * 70)
+print("End of Resource Summary")
+print("=" * 70)
+
+PYEOF
+'''
+    }
+}
         // ─────────────────────────────────────────
         // STAGE 10 — TERRAFORM DESTROY (only if true)
         // ─────────────────────────────────────────
