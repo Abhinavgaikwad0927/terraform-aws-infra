@@ -1,20 +1,38 @@
 pipeline {
-    agent { label 'ec2-agent' }
+    agent any
+
+    parameters {
+        booleanParam(
+            name: 'DESTROY_INFRASTRUCTURE',
+            defaultValue: false,
+            description: 'Set to TRUE to destroy all infrastructure. FALSE to create.'
+        )
+    }
 
     environment {
-        REGION       = 'ap-south-1'
-        DYNAMO_TABLE = 'jenkins-resource-tracker'
+        REGION          = 'ap-south-1'
+        DYNAMO_TABLE    = 'jenkins-resource-tracker'
+        RESOURCE_PREFIX = 'jenkins-auto'
     }
 
     stages {
 
+        // ─────────────────────────────────────────
+        // STAGE 1 — CLONE
+        // ─────────────────────────────────────────
         stage('Clone Repository') {
             steps {
                 checkout scm
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 2 — DYNAMODB TABLE
+        // ─────────────────────────────────────────
         stage('Create DynamoDB Table') {
+            when {
+                expression { return params.DESTROY_INFRASTRUCTURE == false }
+            }
             steps {
                 echo "============================================"
                 echo " STAGE 2 — Creating DynamoDB Table"
@@ -46,6 +64,9 @@ pipeline {
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 3 — TERRAFORM INIT
+        // ─────────────────────────────────────────
         stage('Terraform Init') {
             steps {
                 echo "============================================"
@@ -55,6 +76,9 @@ pipeline {
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 4 — TERRAFORM FORMAT
+        // ─────────────────────────────────────────
         stage('Terraform Format Check') {
             steps {
                 echo "============================================"
@@ -64,6 +88,9 @@ pipeline {
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 5 — TERRAFORM VALIDATE
+        // ─────────────────────────────────────────
         stage('Terraform Validate') {
             steps {
                 echo "============================================"
@@ -73,6 +100,9 @@ pipeline {
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 6 — TERRAFORM PLAN
+        // ─────────────────────────────────────────
         stage('Terraform Plan') {
             steps {
                 echo "============================================"
@@ -82,7 +112,13 @@ pipeline {
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 7 — TERRAFORM APPLY (only if false)
+        // ─────────────────────────────────────────
         stage('Terraform Apply') {
+            when {
+                expression { return params.DESTROY_INFRASTRUCTURE == false }
+            }
             steps {
                 echo "============================================"
                 echo " STAGE 7 — Terraform Apply"
@@ -91,7 +127,13 @@ pipeline {
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 8 — SAVE TO DYNAMODB (only if false)
+        // ─────────────────────────────────────────
         stage('Save Resources to DynamoDB') {
+            when {
+                expression { return params.DESTROY_INFRASTRUCTURE == false }
+            }
             steps {
                 echo "============================================"
                 echo " STAGE 8 — Saving Resources to DynamoDB"
@@ -139,47 +181,19 @@ def save(item):
 
 if vpc_id != "N/A":
     print("Saving VPC...")
-    save({
-        "ResourceId":   {"S": vpc_id},
-        "ResourceType": {"S": "VPC"},
-        "ResourceName": {"S": "jenkins-auto-vpc"},
-        "Region":       {"S": region},
-        "CreatedAt":    {"S": created_at}
-    })
+    save({"ResourceId":{"S":vpc_id},"ResourceType":{"S":"VPC"},"ResourceName":{"S":"jenkins-auto-vpc"},"Region":{"S":region},"CreatedAt":{"S":created_at}})
 
 if subnet_id != "N/A":
     print("Saving Subnet...")
-    save({
-        "ResourceId":   {"S": subnet_id},
-        "ResourceType": {"S": "Subnet"},
-        "ResourceName": {"S": "jenkins-auto-subnet"},
-        "VpcId":        {"S": vpc_id},
-        "Region":       {"S": region},
-        "CreatedAt":    {"S": created_at}
-    })
+    save({"ResourceId":{"S":subnet_id},"ResourceType":{"S":"Subnet"},"ResourceName":{"S":"jenkins-auto-subnet"},"VpcId":{"S":vpc_id},"Region":{"S":region},"CreatedAt":{"S":created_at}})
 
 if sg_id != "N/A":
     print("Saving Security Group...")
-    save({
-        "ResourceId":   {"S": sg_id},
-        "ResourceType": {"S": "SecurityGroup"},
-        "ResourceName": {"S": "jenkins-auto-sg"},
-        "VpcId":        {"S": vpc_id},
-        "Region":       {"S": region},
-        "CreatedAt":    {"S": created_at}
-    })
+    save({"ResourceId":{"S":sg_id},"ResourceType":{"S":"SecurityGroup"},"ResourceName":{"S":"jenkins-auto-sg"},"VpcId":{"S":vpc_id},"Region":{"S":region},"CreatedAt":{"S":created_at}})
 
 if instance_id != "N/A":
     print("Saving EC2 Instance...")
-    save({
-        "ResourceId":   {"S": instance_id},
-        "ResourceType": {"S": "EC2Instance"},
-        "ResourceName": {"S": "jenkins-auto-ec2"},
-        "PublicIp":     {"S": public_ip},
-        "SubnetId":     {"S": subnet_id},
-        "Region":       {"S": region},
-        "CreatedAt":    {"S": created_at}
-    })
+    save({"ResourceId":{"S":instance_id},"ResourceType":{"S":"EC2Instance"},"ResourceName":{"S":"jenkins-auto-ec2"},"PublicIp":{"S":public_ip},"SubnetId":{"S":subnet_id},"Region":{"S":region},"CreatedAt":{"S":created_at}})
 
 print("All resources saved to DynamoDB successfully!")
 PYEOF
@@ -190,87 +204,162 @@ PYEOF
             }
         }
 
+        // ─────────────────────────────────────────
+        // STAGE 9 — PRINT FROM DYNAMODB (only if false)
+        // ─────────────────────────────────────────
         stage('Print All Resources from DynamoDB') {
+            when {
+                expression { return params.DESTROY_INFRASTRUCTURE == false }
+            }
             steps {
                 echo "============================================"
                 echo " STAGE 9 — Reading All Resources from DynamoDB"
                 echo "============================================"
                 sh '''
+                    aws dynamodb scan \
+                        --table-name jenkins-resource-tracker \
+                        --region ap-south-1 \
+                        --output json | python3 -c "
+import json, sys
+
+data = json.load(sys.stdin)
+items = data[\"Items\"]
+
+print()
+print(\"*\" * 60)
+print(\"    ALL AWS RESOURCES CREATED BY JENKINS + TERRAFORM\")
+print(\"*\" * 60)
+print(f\"  Total Resources : {len(items)}\")
+print(\"*\" * 60)
+
+order = [\"VPC\",\"Subnet\",\"SecurityGroup\",\"EC2Instance\"]
+sorted_items = sorted(
+    items,
+    key=lambda x: order.index(x.get(\"ResourceType\",{}).get(\"S\",\"\"))
+    if x.get(\"ResourceType\",{}).get(\"S\",\"\") in order else 99
+)
+
+for item in sorted_items:
+    rtype = item.get(\"ResourceType\", {}).get(\"S\", \"Unknown\")
+    rid   = item.get(\"ResourceId\",   {}).get(\"S\", \"N/A\")
+    rname = item.get(\"ResourceName\", {}).get(\"S\", \"N/A\")
+    pub   = item.get(\"PublicIp\",     {}).get(\"S\", \"\")
+    vpc   = item.get(\"VpcId\",        {}).get(\"S\", \"\")
+    ts    = item.get(\"CreatedAt\",    {}).get(\"S\", \"\")
+
+    print()
+    print(f\"  Resource Type  : {rtype}\")
+    print(f\"  Resource ID    : {rid}\")
+    print(f\"  Resource Name  : {rname}\")
+    if vpc: print(f\"  VPC ID         : {vpc}\")
+    if pub: print(f\"  Public IP      : {pub}  <--- EC2 PUBLIC IP\")
+    print(f\"  Created At     : {ts}\")
+    print(\"-\" * 60)
+
+print()
+print(\"*\" * 60)
+print(\"         END OF RESOURCE SUMMARY\")
+print(\"*\" * 60)
+print()
+"
+                '''
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 10 — TERRAFORM DESTROY (only if true)
+        // ─────────────────────────────────────────
+        stage('Terraform Destroy') {
+            when {
+                expression { return params.DESTROY_INFRASTRUCTURE == true }
+            }
+            steps {
+                echo "============================================"
+                echo " STAGE 10 — Destroying All Infrastructure"
+                echo "============================================"
+                sh '''
+                    echo "DESTROY_INFRASTRUCTURE = true"
+                    echo "Starting terraform destroy..."
+                    terraform destroy -auto-approve
+                    echo "All infrastructure destroyed successfully!"
+                '''
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 11 — CLEAN DYNAMODB (only if true)
+        // ─────────────────────────────────────────
+        stage('Clean DynamoDB Records') {
+            when {
+                expression { return params.DESTROY_INFRASTRUCTURE == true }
+            }
+            steps {
+                echo "============================================"
+                echo " STAGE 11 — Cleaning DynamoDB Records"
+                echo "============================================"
+                sh '''
                     python3 << PYEOF
-import subprocess, json, sys
+import subprocess, json
+
+table  = "jenkins-resource-tracker"
+region = "ap-south-1"
 
 result = subprocess.run(
     ["aws", "dynamodb", "scan",
-     "--table-name", "jenkins-resource-tracker",
-     "--region", "ap-south-1",
+     "--table-name", table,
+     "--region", region,
      "--output", "json"],
     capture_output=True, text=True
 )
 
-if result.returncode != 0:
-    print("ERROR scanning DynamoDB:", result.stderr)
-    sys.exit(1)
-
 data  = json.loads(result.stdout)
-items = data["Items"]
+items = data.get("Items", [])
 
-print()
-print("*" * 60)
-print("   ALL AWS RESOURCES CREATED BY JENKINS + TERRAFORM")
-print("*" * 60)
-print(f"  Total Resources : {len(items)}")
-print("*" * 60)
+print(f"Found {len(items)} records to delete...")
 
-order = ["VPC", "Subnet", "InternetGateway", "SecurityGroup", "EC2Instance"]
-sorted_items = sorted(
-    items,
-    key=lambda x: order.index(x.get("ResourceType", {}).get("S", ""))
-    if x.get("ResourceType", {}).get("S", "") in order else 99
-)
+for item in items:
+    resource_id = item["ResourceId"]["S"]
+    subprocess.run(
+        ["aws", "dynamodb", "delete-item",
+         "--table-name", table,
+         "--region", region,
+         "--key", json.dumps({"ResourceId": {"S": resource_id}})],
+        capture_output=True, text=True
+    )
+    print(f"Deleted: {resource_id}")
 
-for item in sorted_items:
-    rtype = item.get("ResourceType", {}).get("S", "Unknown")
-    rid   = item.get("ResourceId",   {}).get("S", "N/A")
-    rname = item.get("ResourceName", {}).get("S", "N/A")
-    pub   = item.get("PublicIp",     {}).get("S", "")
-    priv  = item.get("PrivateIp",    {}).get("S", "")
-    vpc   = item.get("VpcId",        {}).get("S", "")
-    ts    = item.get("CreatedAt",    {}).get("S", "")
-
-    print()
-    print(f"  Resource Type  : {rtype}")
-    print(f"  Resource ID    : {rid}")
-    print(f"  Resource Name  : {rname}")
-    if vpc:  print(f"  VPC ID         : {vpc}")
-    if pub:  print(f"  Public IP      : {pub}  <--- EC2 PUBLIC IP")
-    if priv: print(f"  Private IP     : {priv}")
-    print(f"  Created At     : {ts}")
-    print("-" * 60)
-
-print()
-print("*" * 60)
-print("           END OF RESOURCE SUMMARY")
-print("*" * 60)
-print()
+print("DynamoDB records cleaned successfully!")
 PYEOF
                 '''
             }
         }
     }
 
+    // ─────────────────────────────────────────
+    // POST
+    // ─────────────────────────────────────────
     post {
         success {
-            sh '''
-                echo ""
-                echo "================================================="
-                echo "       PIPELINE COMPLETED SUCCESSFULLY"
-                echo "================================================="
-                echo "  EC2 Public IP  : $(cat /tmp/public_ip.txt)"
-                echo "  EC2 Instance   : $(cat /tmp/instance_id.txt)"
-                echo "  DynamoDB Table : jenkins-resource-tracker"
-                echo "  Region         : ap-south-1"
-                echo "================================================="
-            '''
+            script {
+                if (params.DESTROY_INFRASTRUCTURE) {
+                    echo "================================================="
+                    echo " INFRASTRUCTURE DESTROYED SUCCESSFULLY"
+                    echo " All DynamoDB records cleaned"
+                    echo "================================================="
+                } else {
+                    sh '''
+                        echo ""
+                        echo "================================================="
+                        echo "       PIPELINE COMPLETED SUCCESSFULLY"
+                        echo "================================================="
+                        echo "  EC2 Public IP  : $(cat /tmp/public_ip.txt 2>/dev/null || echo N/A)"
+                        echo "  EC2 Instance   : $(cat /tmp/instance_id.txt 2>/dev/null || echo N/A)"
+                        echo "  DynamoDB Table : jenkins-resource-tracker"
+                        echo "  Region         : ap-south-1"
+                        echo "================================================="
+                    '''
+                }
+            }
         }
         failure {
             echo "Pipeline FAILED — check the stage that errored above"
@@ -280,4 +369,3 @@ PYEOF
         }
     }
 }
-
