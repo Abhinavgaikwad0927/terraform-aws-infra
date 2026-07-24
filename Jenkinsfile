@@ -144,27 +144,49 @@ EOF
     }
 }
 stage('Wait for SSH') {
+    when {
+        expression { return params.DESTROY_INFRASTRUCTURE == false }
+    }
     steps {
         sh '''
         PUBLIC_IP=$(terraform output -raw public_ip)
 
         echo "Waiting for SSH on $PUBLIC_IP..."
 
-        for i in {1..30}; do
-            if ssh -o StrictHostKeyChecking=no \
-                   -o UserKnownHostsFile=/dev/null \
-                   -i ~/.ssh/jenkins.pem \
-                   ubuntu@$PUBLIC_IP "echo SSH Ready" >/dev/null 2>&1; then
-                echo "SSH is ready."
+        i=1
+        while [ $i -le 30 ]
+        do
+            if ssh \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -i /home/ubuntu/.ssh/jenkins.pem \
+                ubuntu@$PUBLIC_IP "echo SSH Ready" >/dev/null 2>&1
+            then
+                echo "SSH is ready!"
                 exit 0
             fi
 
-            echo "Still waiting..."
+            echo "Attempt $i/30 - SSH not ready yet..."
             sleep 10
+            i=$((i+1))
         done
 
-        echo "SSH did not become available."
+        echo "SSH did not become available after 5 minutes."
         exit 1
+        '''
+    }
+}
+stage('Debug SSH Environment') {
+    steps {
+        sh '''
+        whoami
+        pwd
+        ls -l /home/ubuntu/.ssh/
+        which ssh
+        ssh -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -i /home/ubuntu/.ssh/jenkins.pem \
+            ubuntu@$(terraform output -raw public_ip) "hostname"
         '''
     }
 }
@@ -174,14 +196,14 @@ stage('Configure EC2 using Ansible') {
     }
     steps {
         sh '''
-export ANSIBLE_HOST_KEY_CHECKING=False
+        export ANSIBLE_HOST_KEY_CHECKING=False
 
-ansible-playbook \
--i inventory.ini \
---private-key ~/.ssh/jenkins.pem \
--u ubuntu \
-ansible/playbook.yml
-'''
+        ansible-playbook \
+          -i inventory.ini \
+          --private-key /home/ubuntu/.ssh/jenkins.pem \
+          -u ubuntu \
+          ansible/playbook.yml
+        '''
     }
 }
         // ─────────────────────────────────────────
