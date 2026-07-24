@@ -176,6 +176,23 @@ stage('Debug Pipeline Environment') {
         '''
     }
 }
+stage('Debug Agent') {
+    steps {
+        sh '''
+        echo "===== HOSTNAME ====="
+        hostname
+
+        echo "===== USER ====="
+        whoami
+
+        echo "===== HOME ====="
+        echo $HOME
+
+        echo "===== SSH DIRECTORY ====="
+        ls -la /home/ubuntu/.ssh || true
+        '''
+    }
+}
 stage('Wait for SSH') {
     when {
         expression { return params.DESTROY_INFRASTRUCTURE == false }
