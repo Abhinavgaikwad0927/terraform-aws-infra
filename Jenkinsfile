@@ -126,6 +126,9 @@ pipeline {
                 sh 'terraform apply -auto-approve tfplan'
             }
         }
+      // ─────────────────────────────────────────
+        // STAGE 8 — Generate Ansible Inventory
+        // ─────────────────────────────────────────
         stage('Generate Ansible Inventory') {
     when {
         expression { return params.DESTROY_INFRASTRUCTURE == false }
@@ -143,97 +146,9 @@ EOF
         '''
     }
 }
-stage('Debug Pipeline Environment') {
-    steps {
-        sh '''
-        echo "===== HOSTNAME ====="
-        hostname
-
-        echo "===== USER ====="
-        whoami
-
-        echo "===== HOME ====="
-        echo $HOME
-
-        echo "===== CURRENT DIRECTORY ====="
-        pwd
-
-        echo "===== SSH DIRECTORY ====="
-        ls -la /home/ubuntu/.ssh || true
-
-        echo "===== PUBLIC IP ====="
-        curl -s ifconfig.me || true
-
-        echo
-        echo "===== PRIVATE IP ====="
-        hostname -I || true
-        '''
-    }
-}
-stage('Debug Agent') {
-    steps {
-        sh '''
-        echo "===== HOSTNAME ====="
-        hostname
-
-        echo "===== USER ====="
-        whoami
-
-        echo "===== HOME ====="
-        echo $HOME
-
-        echo "===== SSH DIRECTORY ====="
-        ls -la /home/ubuntu/.ssh || true
-        '''
-    }
-}
-stage('Wait for SSH') {
-    when {
-        expression { return params.DESTROY_INFRASTRUCTURE == false }
-    }
-    steps {
-        sh '''
-        PUBLIC_IP=$(terraform output -raw public_ip)
-
-        echo "Waiting for SSH on $PUBLIC_IP..."
-
-        i=1
-        while [ $i -le 30 ]
-        do
-            if ssh \
-                -o StrictHostKeyChecking=no \
-                -o UserKnownHostsFile=/dev/null \
-                -i /home/ubuntu/.ssh/jenkins.pem \
-                ubuntu@$PUBLIC_IP "echo SSH Ready" >/dev/null 2>&1
-            then
-                echo "SSH is ready!"
-                exit 0
-            fi
-
-            echo "Attempt $i/30 - SSH not ready yet..."
-            sleep 10
-            i=$((i+1))
-        done
-
-        echo "SSH did not become available after 5 minutes."
-        exit 1
-        '''
-    }
-}
-stage('Debug SSH Environment') {
-    steps {
-        sh '''
-        whoami
-        pwd
-        ls -l /home/ubuntu/.ssh/
-        which ssh
-        ssh -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -i /home/ubuntu/.ssh/jenkins.pem \
-            ubuntu@$(terraform output -raw public_ip) "hostname"
-        '''
-    }
-}
+      // ─────────────────────────────────────────
+        // STAGE 9 — Configure EC2 using Ansible
+        // ─────────────────────────────────────────
 stage('Configure EC2 using Ansible') {
     when {
         expression { return params.DESTROY_INFRASTRUCTURE == false }
@@ -251,7 +166,7 @@ stage('Configure EC2 using Ansible') {
     }
 }
         // ─────────────────────────────────────────
-        // STAGE 8 — SAVE TO DYNAMODB (only if false)
+        // STAGE 10 — SAVE TO DYNAMODB (only if false)
         // ─────────────────────────────────────────
         stage('Save Resources to DynamoDB') {
             when {
@@ -328,7 +243,7 @@ PYEOF
         }
 
         // ─────────────────────────────────────────
-// STAGE 9 — PRINT FROM DYNAMODB (only if false)
+// STAGE 11 — PRINT FROM DYNAMODB (only if false)
 // ─────────────────────────────────────────
 stage('Print All Resources from DynamoDB') {
     when {
@@ -427,7 +342,7 @@ PYEOF
     }
 }
         // ─────────────────────────────────────────
-        // STAGE 10 — TERRAFORM DESTROY (only if true)
+        // STAGE 12 — TERRAFORM DESTROY (only if true)
         // ─────────────────────────────────────────
         stage('Terraform Destroy') {
             when {
@@ -447,7 +362,7 @@ PYEOF
         }
 
         // ─────────────────────────────────────────
-        // STAGE 11 — CLEAN DYNAMODB (only if true)
+        // STAGE 13 — CLEAN DYNAMODB (only if true)
         // ─────────────────────────────────────────
         stage('Clean DynamoDB Records') {
             when {
