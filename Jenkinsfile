@@ -143,17 +143,45 @@ EOF
         '''
     }
 }
+stage('Wait for SSH') {
+    steps {
+        sh '''
+        PUBLIC_IP=$(terraform output -raw public_ip)
+
+        echo "Waiting for SSH on $PUBLIC_IP..."
+
+        for i in {1..30}; do
+            if ssh -o StrictHostKeyChecking=no \
+                   -o UserKnownHostsFile=/dev/null \
+                   -i ~/.ssh/jenkins.pem \
+                   ubuntu@$PUBLIC_IP "echo SSH Ready" >/dev/null 2>&1; then
+                echo "SSH is ready."
+                exit 0
+            fi
+
+            echo "Still waiting..."
+            sleep 10
+        done
+
+        echo "SSH did not become available."
+        exit 1
+        '''
+    }
+}
 stage('Configure EC2 using Ansible') {
     when {
         expression { return params.DESTROY_INFRASTRUCTURE == false }
     }
     steps {
         sh '''
-        ansible-playbook \
-          -i inventory.ini \
-          --private-key ~/.ssh/jenkins.pem \
-          ansible/playbook.yml
-        '''
+export ANSIBLE_HOST_KEY_CHECKING=False
+
+ansible-playbook \
+-i inventory.ini \
+--private-key ~/.ssh/jenkins.pem \
+-u ubuntu \
+ansible/playbook.yml
+'''
     }
 }
         // ─────────────────────────────────────────
