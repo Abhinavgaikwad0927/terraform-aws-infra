@@ -146,33 +146,27 @@ EOF
 stage('Debug Pipeline Environment') {
     steps {
         sh '''
+        echo "===== HOSTNAME ====="
+        hostname
+
         echo "===== USER ====="
         whoami
-        id
 
         echo "===== HOME ====="
         echo $HOME
 
-        echo "===== SSH ====="
-        which ssh
+        echo "===== CURRENT DIRECTORY ====="
+        pwd
 
-        echo "===== KEY ====="
-        ls -l /home/ubuntu/.ssh/
-        ls -l /home/ubuntu/.ssh/jenkins.pem
+        echo "===== SSH DIRECTORY ====="
+        ls -la /home/ubuntu/.ssh || true
 
         echo "===== PUBLIC IP ====="
-        terraform output -raw public_ip
+        curl -s ifconfig.me || true
 
-        PUBLIC_IP=$(terraform output -raw public_ip)
-
-        echo "===== SSH TEST ====="
-        ssh -vvv \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          -i /home/ubuntu/.ssh/jenkins.pem \
-          ubuntu@$PUBLIC_IP "hostname"
-
-        echo "Exit Code: $?"
+        echo
+        echo "===== PRIVATE IP ====="
+        hostname -I || true
         '''
     }
 }
