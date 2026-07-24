@@ -1,0 +1,18 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install Java
+  apt:
+    name: openjdk-21-jdk
+    state: present
+
+- name: Verify Java
+  command: java -version
+  register: java_version
+  changed_when: false
+  ignore_errors: true
+
+- debug:
+    var: java_version.stderr_lines

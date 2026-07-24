@@ -126,7 +126,36 @@ pipeline {
                 sh 'terraform apply -auto-approve tfplan'
             }
         }
+        stage('Generate Ansible Inventory') {
+    when {
+        expression { return params.DESTROY_INFRASTRUCTURE == false }
+    }
+    steps {
+        sh '''
+        PUBLIC_IP=$(terraform output -raw public_ip)
 
+        cat > inventory.ini <<EOF
+[servers]
+$PUBLIC_IP ansible_user=ubuntu
+EOF
+
+        cat inventory.ini
+        '''
+    }
+}
+stage('Configure EC2 using Ansible') {
+    when {
+        expression { return params.DESTROY_INFRASTRUCTURE == false }
+    }
+    steps {
+        sh '''
+        ansible-playbook \
+          -i inventory.ini \
+          --private-key ~/.ssh/jenkins.pem \
+          ansible/playbook.yml
+        '''
+    }
+}
         // ─────────────────────────────────────────
         // STAGE 8 — SAVE TO DYNAMODB (only if false)
         // ─────────────────────────────────────────
