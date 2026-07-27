@@ -44,3 +44,12 @@ module "s3" {
 
   bucket_name = var.bucket_name
 }
+module "ecr" {
+  source = "./modules/ecr"
+
+  repository_name = "project-ecr"
+
+  tags = {
+    Environment = "dev"
+  }
+}
