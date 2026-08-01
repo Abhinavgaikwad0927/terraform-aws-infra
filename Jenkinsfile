@@ -261,7 +261,7 @@ stage('Debug Agent') {
             }
 
         }
-stage('Deploy Application') {
+stage('Deploy Application Ansible') {
     steps {
         sh '''
         export ANSIBLE_HOST_KEY_CHECKING=False
