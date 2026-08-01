@@ -6,3 +6,4 @@
   roles:
     - java
     - docker
+    - awscli
