@@ -1,0 +1,47 @@
+---
+- name: Deploy Docker Application
+  hosts: servers
+  become: yes
+
+  vars:
+    aws_region: ap-south-1
+    aws_account_id: "318731645235"
+    ecr_repository: "project-ecr"
+    image_tag: "latest"
+    container_name: "project-app"
+
+  tasks:
+
+    - name: Login to Amazon ECR
+      shell: |
+        aws ecr get-login-password --region {{ aws_region }} \
+        | docker login \
+        --username AWS \
+        --password-stdin {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com
+
+    - name: Pull latest Docker image
+      shell: |
+        docker pull {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_repository }}:{{ image_tag }}
+
+    - name: Stop old container
+      shell: docker stop {{ container_name }}
+      ignore_errors: yes
+
+    - name: Remove old container
+      shell: docker rm {{ container_name }}
+      ignore_errors: yes
+
+    - name: Run new container
+      shell: |
+        docker run -d \
+        --name {{ container_name }} \
+        --restart unless-stopped \
+        -p 80:8080 \
+        {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_repository }}:{{ image_tag }}
+
+    - name: Show running containers
+      shell: docker ps
+      register: docker_output
+
+    - debug:
+        var: docker_output.stdout_lines
