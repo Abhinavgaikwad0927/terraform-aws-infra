@@ -16,7 +16,7 @@ pipeline {
         ECR_REPOSITORY = "project-ecr"
 
 
-        IMAGE_NAME = "project-ecr"
+        IMAGE_NAME = "latest"
 
         IMAGE_TAG = "${env.BUILD_NUMBER}"
 
