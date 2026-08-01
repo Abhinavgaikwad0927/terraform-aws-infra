@@ -219,38 +219,6 @@ stage('Deploy Application via Ansible') {
         '''
     }
 }
-        stage('Push Image to Amazon ECR') {
-
-            steps {
-
-                sh '''
-
-                docker tag \
-                ${IMAGE_NAME}:latest \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-
-                docker push \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-                '''
-
-            }
-
-        }
-stage('Deploy Application Ansible') {
-    steps {
-        sh '''
-        export ANSIBLE_HOST_KEY_CHECKING=False
-
-        ansible-playbook \
-        -i inventory.ini \
-        --private-key /home/ubuntu/.ssh/jenkins.pem \
-        -u ubuntu \
-        ansible/deploy.yml
-        '''
-    }
-}
         stage('Get Terraform EC2 Public IP') {
 
             steps {
