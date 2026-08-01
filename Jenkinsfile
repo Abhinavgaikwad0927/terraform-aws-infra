@@ -15,7 +15,6 @@ pipeline {
 
         ECR_REPOSITORY = "project-ecr"
 
-        ACCOUNT_ID = credentials('aws-account-id')
 
         IMAGE_NAME = "project-ecr"
 
@@ -174,6 +173,18 @@ stage('Configure EC2 using Ansible') {
           -u ubuntu \
           ansible/playbook.yml
         '''
+    }
+}
+stage('Get AWS Account ID') {
+    steps {
+        script {
+            env.ACCOUNT_ID = sh(
+                script: "aws sts get-caller-identity --query Account --output text",
+                returnStdout: true
+            ).trim()
+
+            echo "AWS Account ID: ${env.ACCOUNT_ID}"
+        }
     }
 }
 stage('Login to Amazon ECR') {
