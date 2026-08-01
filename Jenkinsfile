@@ -206,33 +206,16 @@ stage('Login to Amazon ECR') {
             }
 
         }
-
-stage('Debug Agent') {
+stage('Deploy Application via Ansible') {
     steps {
         sh '''
-        echo "===== WHOAMI ====="
-        whoami
+        export ANSIBLE_HOST_KEY_CHECKING=False
 
-        echo "===== ID ====="
-        id
-
-        echo "===== GROUPS ====="
-        groups
-
-        echo "===== DOCKER SOCK ====="
-        ls -l /var/run/docker.sock || true
-
-        echo "===== DOCKER VERSION ====="
-        docker version || true
-
-        echo "===== DOCKER PS ====="
-        docker ps || true
-
-        echo "===== JAVA ====="
-        java -version || true
-
-        echo "===== AWS ====="
-        aws sts get-caller-identity
+        ansible-playbook \
+            -i inventory.ini \
+            --private-key /home/ubuntu/.ssh/jenkins.pem \
+            -u ubuntu \
+            ansible/deploy.yml
         '''
     }
 }
