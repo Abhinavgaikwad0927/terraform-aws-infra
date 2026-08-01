@@ -187,25 +187,7 @@ stage('Get AWS Account ID') {
         }
     }
 }
-        stage('Docker Build') {
-
-            steps {
-
-                sh '''
-
-                docker build \
-                -t ${IMAGE_NAME}:latest .
-
-                docker tag \
-                ${IMAGE_NAME}:latest \
-                ${IMAGE_NAME}:${IMAGE_TAG}
-
-                '''
-
-            }
-
-        }
-
+      
 stage('Login to Amazon ECR') {
 
             steps {
