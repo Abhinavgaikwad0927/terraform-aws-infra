@@ -246,15 +246,9 @@ stage('Debug Agent') {
                 ${IMAGE_NAME}:latest \
                 ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
 
-                docker tag \
-                ${IMAGE_NAME}:${IMAGE_TAG} \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
 
                 docker push \
                 ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-                docker push \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
 
                 '''
 
@@ -312,7 +306,7 @@ stage('Deploy Application Ansible') {
                 ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
                 docker pull \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
 
                 docker stop nginx-app || true
 
@@ -322,7 +316,7 @@ stage('Deploy Application Ansible') {
                     --name nginx-app \
                     -p 80:8080 \
                     --restart unless-stopped \
-                    ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+                    ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
 
                 exit
 
