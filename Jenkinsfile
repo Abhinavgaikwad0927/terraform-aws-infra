@@ -10,9 +10,20 @@ pipeline {
     }
 
     environment {
-        REGION          = 'ap-south-1'
-        DYNAMO_TABLE    = 'jenkins-resource-tracker'
-        RESOURCE_PREFIX = 'jenkins-auto'
+
+        AWS_REGION = "ap-south-1"
+
+        ECR_REPOSITORY = "project-ecr"
+
+        ACCOUNT_ID = credentials('aws-account-id')
+
+        IMAGE_NAME = "project-ecr"
+
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
+
+        SSH_KEY = "/var/lib/jenkins/.ssh/jenkins.pem"
+
+        SSH_USER = "ubuntu"
     }
 
     stages {
@@ -165,6 +176,111 @@ stage('Configure EC2 using Ansible') {
         '''
     }
 }
+stage('Login to Amazon ECR') {
+
+            steps {
+
+                sh '''
+
+                aws ecr get-login-password \
+                --region ${AWS_REGION} \
+                | docker login \
+                --username AWS \
+                --password-stdin \
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                '''
+
+            }
+
+        }
+
+        stage('Push Image to Amazon ECR') {
+
+            steps {
+
+                sh '''
+
+                docker tag \
+                ${IMAGE_NAME}:latest \
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
+
+                docker tag \
+                ${IMAGE_NAME}:${IMAGE_TAG} \
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+
+                docker push \
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
+
+                docker push \
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+
+                '''
+
+            }
+
+        }
+
+        stage('Get Terraform EC2 Public IP') {
+
+            steps {
+
+                script {
+
+                    env.PUBLIC_IP = sh(
+                        script: "terraform output -raw public_ip",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Application EC2 IP : ${env.PUBLIC_IP}"
+
+                }
+
+            }
+
+        }
+
+        stage('Deploy Application') {
+
+            steps {
+
+                sh """
+
+                ssh \
+                -o StrictHostKeyChecking=no \
+                -i ${SSH_KEY} \
+                ${SSH_USER}@${PUBLIC_IP} << EOF
+
+                aws ecr get-login-password \
+                --region ${AWS_REGION} \
+                | docker login \
+                --username AWS \
+                --password-stdin \
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                docker pull \
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+
+                docker stop nginx-app || true
+
+                docker rm nginx-app || true
+
+                docker run -d \
+                    --name nginx-app \
+                    -p 80:8080 \
+                    --restart unless-stopped \
+                    ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+
+                exit
+
+EOF
+
+                """
+
+            }
+
+        }
+
         // ─────────────────────────────────────────
         // STAGE 10 — SAVE TO DYNAMODB (only if false)
         // ─────────────────────────────────────────
