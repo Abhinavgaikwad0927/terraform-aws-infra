@@ -16,7 +16,7 @@ pipeline {
         ECR_REPOSITORY = "project-ecr"
 
 
-        IMAGE_NAME = "project-ecr"
+        IMAGE_NAME = "latest"
 
         IMAGE_TAG = "${env.BUILD_NUMBER}"
 
@@ -206,33 +206,16 @@ stage('Login to Amazon ECR') {
             }
 
         }
-
-stage('Debug Agent') {
+stage('Deploy Application via Ansible') {
     steps {
         sh '''
-        echo "===== WHOAMI ====="
-        whoami
+        export ANSIBLE_HOST_KEY_CHECKING=False
 
-        echo "===== ID ====="
-        id
-
-        echo "===== GROUPS ====="
-        groups
-
-        echo "===== DOCKER SOCK ====="
-        ls -l /var/run/docker.sock || true
-
-        echo "===== DOCKER VERSION ====="
-        docker version || true
-
-        echo "===== DOCKER PS ====="
-        docker ps || true
-
-        echo "===== JAVA ====="
-        java -version || true
-
-        echo "===== AWS ====="
-        aws sts get-caller-identity
+        ansible-playbook \
+            -i inventory.ini \
+            --private-key /home/ubuntu/.ssh/jenkins.pem \
+            -u ubuntu \
+            ansible/deploy.yml
         '''
     }
 }
@@ -246,15 +229,9 @@ stage('Debug Agent') {
                 ${IMAGE_NAME}:latest \
                 ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
 
-                docker tag \
-                ${IMAGE_NAME}:${IMAGE_TAG} \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
 
                 docker push \
                 ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-                docker push \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
 
                 '''
 
@@ -312,7 +289,7 @@ stage('Deploy Application Ansible') {
                 ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
                 docker pull \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
 
                 docker stop nginx-app || true
 
@@ -322,7 +299,7 @@ stage('Deploy Application Ansible') {
                     --name nginx-app \
                     -p 80:8080 \
                     --restart unless-stopped \
-                    ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+                    ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
 
                 exit
 
