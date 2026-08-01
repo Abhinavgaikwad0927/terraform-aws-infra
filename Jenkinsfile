@@ -219,38 +219,6 @@ stage('Deploy Application via Ansible') {
         '''
     }
 }
-        stage('Push Image to Amazon ECR') {
-
-            steps {
-
-                sh '''
-
-                docker tag \
-                ${IMAGE_NAME}:latest \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-
-                docker push \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-                '''
-
-            }
-
-        }
-stage('Deploy Application Ansible') {
-    steps {
-        sh '''
-        export ANSIBLE_HOST_KEY_CHECKING=False
-
-        ansible-playbook \
-        -i inventory.ini \
-        --private-key /home/ubuntu/.ssh/jenkins.pem \
-        -u ubuntu \
-        ansible/deploy.yml
-        '''
-    }
-}
         stage('Get Terraform EC2 Public IP') {
 
             steps {
@@ -270,48 +238,7 @@ stage('Deploy Application Ansible') {
 
         }
 
-        stage('Deploy Application') {
-
-            steps {
-
-                sh """
-
-                ssh \
-                -o StrictHostKeyChecking=no \
-                -i ${SSH_KEY} \
-                ${SSH_USER}@${PUBLIC_IP} << EOF
-
-                aws ecr get-login-password \
-                --region ${AWS_REGION} \
-                | docker login \
-                --username AWS \
-                --password-stdin \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
-
-                docker pull \
-                ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-                docker stop nginx-app || true
-
-                docker rm nginx-app || true
-
-                docker run -d \
-                    --name nginx-app \
-                    -p 80:8080 \
-                    --restart unless-stopped \
-                    ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-                exit
-
-EOF
-
-                """
-
-            }
-
-        }
-
-        // ─────────────────────────────────────────
+                // ─────────────────────────────────────────
         // STAGE 10 — SAVE TO DYNAMODB (only if false)
         // ─────────────────────────────────────────
         stage('Save Resources to DynamoDB') {
