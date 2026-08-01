@@ -261,7 +261,19 @@ stage('Debug Agent') {
             }
 
         }
+stage('Deploy Application') {
+    steps {
+        sh '''
+        export ANSIBLE_HOST_KEY_CHECKING=False
 
+        ansible-playbook \
+        -i inventory.ini \
+        --private-key /home/ubuntu/.ssh/jenkins.pem \
+        -u ubuntu \
+        ansible/deploy.yml
+        '''
+    }
+}
         stage('Get Terraform EC2 Public IP') {
 
             steps {
