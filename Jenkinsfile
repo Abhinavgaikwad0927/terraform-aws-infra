@@ -202,15 +202,28 @@ stage('Configure EC2 using Ansible') {
         expression { return params.DESTROY_INFRASTRUCTURE == false }
     }
     steps {
-        sh '''
-        export ANSIBLE_HOST_KEY_CHECKING=False
+        echo "============================================"
+        echo " STAGE 8 — Configure EC2 using Ansible"
+        echo "============================================"
 
-        ansible-playbook \
-          -i inventory.ini \
-          --private-key /home/ubuntu/.ssh/jenkins.pem \
-          -u ubuntu \
-          ansible/playbook.yml
-        '''
+        sshagent(credentials: ['jenkins-ec2-ssh']) {
+
+            sh '''
+                export ANSIBLE_HOST_KEY_CHECKING=False
+
+                echo "Testing SSH connection..."
+
+                ansible all \
+                    -i inventory.ini \
+                    -m ping
+
+                echo "Running Ansible playbook..."
+
+                ansible-playbook \
+                    -i inventory.ini \
+                    ansible/playbook.yml
+            '''
+        }
     }
 }
 stage('Get AWS Account ID') {
