@@ -5,7 +5,7 @@
 
   vars:
     aws_region: ap-south-1
-    aws_account_id: "318731645235"
+    aws_account_id: "025232685400"
     ecr_repository: "project-ecr"
     image_tag: "latest"
     container_name: "project-app"
