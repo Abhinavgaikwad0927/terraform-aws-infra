@@ -37,43 +37,81 @@ pipeline {
         }
 
         // ─────────────────────────────────────────
-        // STAGE 2 — DYNAMODB TABLE
-        // ─────────────────────────────────────────
-        stage('Create DynamoDB Table') {
-            when {
-                expression { return params.DESTROY_INFRASTRUCTURE == false }
-            }
-            steps {
-                echo "============================================"
-                echo " STAGE 2 — Creating DynamoDB Table"
-                echo "============================================"
-                sh '''
-                    TABLE_EXISTS=$(aws dynamodb list-tables \
-                        --region ap-south-1 \
-                        --query "TableNames[?@=='jenkins-resource-tracker']" \
-                        --output text)
+// STAGE 2 — DYNAMODB TABLES
+// ─────────────────────────────────────────
+stage('Create DynamoDB Tables') {
+    when {
+        expression { return params.DESTROY_INFRASTRUCTURE == false }
+    }
+    steps {
+        echo "============================================"
+        echo " STAGE 2 — Creating DynamoDB Tables"
+        echo "============================================"
 
-                    if [ -z "$TABLE_EXISTS" ]; then
-                        echo "Creating DynamoDB table..."
-                        aws dynamodb create-table \
-                            --table-name jenkins-resource-tracker \
-                            --attribute-definitions AttributeName=ResourceId,AttributeType=S \
-                            --key-schema AttributeName=ResourceId,KeyType=HASH \
-                            --billing-mode PAY_PER_REQUEST \
-                            --region ap-south-1
+        sh '''
+            # ─────────────────────────────────
+            # TABLE 1 — Jenkins Resource Tracker
+            # ─────────────────────────────────
 
-                        aws dynamodb wait table-exists \
-                            --table-name jenkins-resource-tracker \
-                            --region ap-south-1
+            TABLE_EXISTS=$(aws dynamodb list-tables \
+                --region ap-south-1 \
+                --query "TableNames[?@=='jenkins-resource-tracker']" \
+                --output text)
 
-                        echo "DynamoDB Table ACTIVE"
-                    else
-                        echo "Table already exists — skipping"
-                    fi
-                '''
-            }
-        }
+            if [ -z "$TABLE_EXISTS" ]; then
 
+                echo "Creating jenkins-resource-tracker..."
+
+                aws dynamodb create-table \
+                    --table-name jenkins-resource-tracker \
+                    --attribute-definitions AttributeName=ResourceId,AttributeType=S \
+                    --key-schema AttributeName=ResourceId,KeyType=HASH \
+                    --billing-mode PAY_PER_REQUEST \
+                    --region ap-south-1
+
+                aws dynamodb wait table-exists \
+                    --table-name jenkins-resource-tracker \
+                    --region ap-south-1
+
+                echo "jenkins-resource-tracker is ACTIVE"
+
+            else
+                echo "jenkins-resource-tracker already exists — skipping"
+            fi
+
+
+            # ─────────────────────────────────
+            # TABLE 2 — Terraform State Lock
+            # ─────────────────────────────────
+
+            LOCK_TABLE_EXISTS=$(aws dynamodb list-tables \
+                --region ap-south-1 \
+                --query "TableNames[?@=='terraform-locks']" \
+                --output text)
+
+            if [ -z "$LOCK_TABLE_EXISTS" ]; then
+
+                echo "Creating terraform-locks..."
+
+                aws dynamodb create-table \
+                    --table-name terraform-locks \
+                    --attribute-definitions AttributeName=LockID,AttributeType=S \
+                    --key-schema AttributeName=LockID,KeyType=HASH \
+                    --billing-mode PAY_PER_REQUEST \
+                    --region ap-south-1
+
+                aws dynamodb wait table-exists \
+                    --table-name terraform-locks \
+                    --region ap-south-1
+
+                echo "terraform-locks is ACTIVE"
+
+            else
+                echo "terraform-locks already exists — skipping"
+            fi
+        '''
+    }
+}
         // ─────────────────────────────────────────
         // STAGE 3 — TERRAFORM INIT
         // ─────────────────────────────────────────
