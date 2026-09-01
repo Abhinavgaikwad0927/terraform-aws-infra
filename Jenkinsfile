@@ -194,6 +194,38 @@ EOF
         '''
     }
 }
+stage('Wait for EC2 SSH') {
+    steps {
+        sshagent(credentials: ['jenkins-ec2-ssh']) {
+            sh '''
+                export ANSIBLE_HOST_KEY_CHECKING=False
+
+                echo "============================================"
+                echo "Waiting for EC2 to become SSH ready"
+                echo "============================================"
+
+                for i in $(seq 1 30); do
+
+                    echo "SSH attempt $i/30"
+
+                    if ansible all -i inventory.ini -m ping -o; then
+                        echo "============================================"
+                        echo "EC2 is ready!"
+                        echo "============================================"
+                        exit 0
+                    fi
+
+                    echo "Waiting 10 seconds..."
+                    sleep 10
+                done
+
+                echo "ERROR: EC2 did not become reachable after 5 minutes"
+                exit 1
+            '''
+        }
+    }
+}
+
       // ─────────────────────────────────────────
         // STAGE 9 — Configure EC2 using Ansible
         // ─────────────────────────────────────────
