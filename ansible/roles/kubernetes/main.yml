@@ -1,42 +1,82 @@
 ---
-- name: Update apt packages
-  apt:
-    update_cache: yes
-
-- name: Install required packages
+- name: Install required packages for Kubernetes
+  become: true
   apt:
     name:
       - curl
       - conntrack
     state: present
+    update_cache: true
 
-- name: Install kubectl
-  shell: |
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-    rm kubectl
-
-- name: Download Minikube
+- name: Download kubectl
+  become: true
   get_url:
-    url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-    dest: /tmp/minikube
+    url: https://dl.k8s.io/release/v1.34.1/bin/linux/amd64/kubectl
+    dest: /usr/local/bin/kubectl
     mode: '0755'
 
-- name: Install Minikube
-  shell: |
-    install /tmp/minikube /usr/local/bin/minikube
+- name: Verify kubectl
+  command: kubectl version --client
+  register: kubectl_version
+  changed_when: false
 
-- name: Add ubuntu user to Docker group
+- name: Display kubectl version
+  debug:
+    var: kubectl_version.stdout
+
+- name: Download Minikube
+  become: true
+  get_url:
+    url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    dest: /usr/local/bin/minikube
+    mode: '0755'
+
+- name: Verify Minikube
+  command: minikube version
+  register: minikube_version
+  changed_when: false
+
+- name: Display Minikube version
+  debug:
+    var: minikube_version.stdout
+
+- name: Add ubuntu user to docker group
+  become: true
   user:
     name: ubuntu
     groups: docker
-    append: yes
+    append: true
 
-- name: Start Minikube
+- name: Check Minikube status
+  become: true
   become_user: ubuntu
-  shell: |
-    minikube start --driver=docker
+  command: minikube status --output=json
+  register: minikube_status
+  failed_when: false
+  changed_when: false
 
-- name: Check Kubernetes cluster
+- name: Start Minikube with Docker driver
+  become: true
   become_user: ubuntu
-  shell: kubectl get nodes
+  environment:
+    HOME: /home/ubuntu
+    USER: ubuntu
+  command: minikube start --driver=docker
+  when: >
+    minikube_status.rc != 0 or
+    '"Running"' not in minikube_status.stdout
+
+- name: Verify Kubernetes cluster
+  become: true
+  become_user: ubuntu
+  environment:
+    HOME: /home/ubuntu
+    USER: ubuntu
+  command: kubectl get nodes
+  register: kubernetes_nodes
+  changed_when: false
+
+- name: Display Kubernetes nodes
+  debug:
+    var: kubernetes_nodes.stdout
+
