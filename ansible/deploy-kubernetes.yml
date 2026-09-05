@@ -1,0 +1,53 @@
+---
+- name: Deploy Kubernetes Pods
+  hosts: servers
+  become: yes
+
+  tasks:
+
+    - name: Create Kubernetes directory
+      file:
+        path: /home/ubuntu/kubernetes
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Copy Kubernetes files
+      copy:
+        src: ../kubernetes/
+        dest: /home/ubuntu/kubernetes/
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Create ECR secret
+      become_user: ubuntu
+      shell: |
+        kubectl create secret docker-registry ecr-secret \
+          --docker-server=025232685400.dkr.ecr.ap-south-1.amazonaws.com \
+          --docker-username=AWS \
+          --docker-password=$(aws ecr get-login-password --region ap-south-1) \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Deploy Application
+      become_user: ubuntu
+      command: kubectl apply -f /home/ubuntu/kubernetes/app-pod.yml
+
+    - name: Deploy Prometheus Config
+      become_user: ubuntu
+      command: kubectl apply -f /home/ubuntu/kubernetes/prometheus-config.yml
+
+    - name: Deploy Prometheus
+      become_user: ubuntu
+      command: kubectl apply -f /home/ubuntu/kubernetes/prometheus-pod.yml
+
+    - name: Deploy Grafana
+      become_user: ubuntu
+      command: kubectl apply -f /home/ubuntu/kubernetes/grafana-pod.yml
+
+    - name: Check Pods
+      become_user: ubuntu
+      command: kubectl get pods -o wide
+      register: pod_status
+
+    - debug:
+        var: pod_status.stdout_lines
