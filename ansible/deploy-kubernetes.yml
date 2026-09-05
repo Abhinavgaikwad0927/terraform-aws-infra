@@ -61,5 +61,4 @@
     - name: Display Pod Status
       debug:
         var: pod_status.stdout_lines
-```
 
