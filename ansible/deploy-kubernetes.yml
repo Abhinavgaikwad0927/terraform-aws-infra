@@ -14,7 +14,7 @@
 
     - name: Copy Kubernetes files
       copy:
-        src: ../kubernetes/
+        src: "{{ playbook_dir }}/../kubernetes/"
         dest: /home/ubuntu/kubernetes/
         owner: ubuntu
         group: ubuntu
