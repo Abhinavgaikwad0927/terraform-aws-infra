@@ -1,3 +1,4 @@
+```yaml
 ---
 - name: Deploy Kubernetes Pods
   hosts: servers
@@ -11,13 +12,15 @@
         state: directory
         owner: ubuntu
         group: ubuntu
+        mode: "0755"
 
     - name: Copy Kubernetes files
       copy:
-        src: "{{ playbook_dir }}/../kubernetes/"
+        src: "{{ playbook_dir }}/roles/kubernetes/"
         dest: /home/ubuntu/kubernetes/
         owner: ubuntu
         group: ubuntu
+        mode: "0644"
 
     - name: Create ECR secret
       become_user: ubuntu
@@ -25,29 +28,39 @@
         kubectl create secret docker-registry ecr-secret \
           --docker-server=025232685400.dkr.ecr.ap-south-1.amazonaws.com \
           --docker-username=AWS \
-          --docker-password=$(aws ecr get-login-password --region ap-south-1) \
+          --docker-password="$(aws ecr get-login-password --region ap-south-1)" \
           --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
 
     - name: Deploy Application
       become_user: ubuntu
-      command: kubectl apply -f /home/ubuntu/kubernetes/app-pod.yml
+      command:
+        cmd: kubectl apply -f /home/ubuntu/kubernetes/app-pod.yaml
 
     - name: Deploy Prometheus Config
       become_user: ubuntu
-      command: kubectl apply -f /home/ubuntu/kubernetes/prometheus-config.yml
+      command:
+        cmd: kubectl apply -f /home/ubuntu/kubernetes/prometheus-config.yaml
 
     - name: Deploy Prometheus
       become_user: ubuntu
-      command: kubectl apply -f /home/ubuntu/kubernetes/prometheus-pod.yml
+      command:
+        cmd: kubectl apply -f /home/ubuntu/kubernetes/prometheus-pod.yaml
 
     - name: Deploy Grafana
       become_user: ubuntu
-      command: kubectl apply -f /home/ubuntu/kubernetes/grafana-pod.yml
+      command:
+        cmd: kubectl apply -f /home/ubuntu/kubernetes/grafana-pod.yaml
 
     - name: Check Pods
       become_user: ubuntu
-      command: kubectl get pods -o wide
+      command:
+        cmd: kubectl get pods -o wide
       register: pod_status
 
-    - debug:
+    - name: Display Pod Status
+      debug:
         var: pod_status.stdout_lines
+```
+
