@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: project-app
+  labels:
+    app: project-app
+
+spec:
+
+  imagePullSecrets:
+    - name: ecr-secret
+
+  containers:
+
+    - name: project-app
+
+      image: 025232685400.dkr.ecr.ap-south-1.amazonaws.com/project-ecr:latest
+
+      imagePullPolicy: Always
+
+      ports:
+        - containerPort: 8080

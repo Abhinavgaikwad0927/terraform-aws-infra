@@ -258,6 +258,47 @@ stage('Configure EC2 using Ansible') {
         }
     }
 }
+stage('Deploy Kubernetes Pods') {
+    when {
+        expression {
+            return params.DESTROY_INFRASTRUCTURE == false
+        }
+    }
+
+    steps {
+        sshagent(credentials: ['jenkins-ec2-ssh']) {
+
+            sh '''
+                export ANSIBLE_HOST_KEY_CHECKING=False
+
+                ansible-playbook \
+                    -i inventory.ini \
+                    ansible/deploy-kubernetes.yml
+            '''
+        }
+    }
+}
+stage('Verify Kubernetes Deployment') {
+    when {
+        expression {
+            return params.DESTROY_INFRASTRUCTURE == false
+        }
+    }
+
+    steps {
+        sshagent(credentials: ['jenkins-ec2-ssh']) {
+
+            sh '''
+                export ANSIBLE_HOST_KEY_CHECKING=False
+
+                ansible all \
+                    -i inventory.ini \
+                    -m shell \
+                    -a "sudo -u ubuntu kubectl get pods -o wide"
+            '''
+        }
+    }
+}
 stage('Get AWS Account ID') {
     steps {
         script {

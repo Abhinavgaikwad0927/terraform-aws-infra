@@ -1,0 +1,58 @@
+---
+- name: Install Kubernetes and Minikube
+  hosts: servers
+  become: yes
+
+  tasks:
+
+    - name: Update packages
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - conntrack
+          - docker.io
+        state: present
+
+    - name: Start Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Download kubectl
+      shell: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+
+    - name: Install kubectl
+      shell: |
+        install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+    - name: Download Minikube
+      get_url:
+        url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        dest: /tmp/minikube
+        mode: '0755'
+
+    - name: Install Minikube
+      shell: |
+        install /tmp/minikube /usr/local/bin/minikube
+
+    - name: Add ubuntu user to Docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Start Minikube
+      become_user: ubuntu
+      shell: |
+        minikube start --driver=docker
+
+    - name: Check cluster
+      become_user: ubuntu
+      shell: |
+        kubectl get nodes
