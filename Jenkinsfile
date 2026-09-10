@@ -1,6 +1,11 @@
 pipeline {
     agent { label 'ec2-agent' }
 
+    options {
+        skipDefaultCheckout(true)
+        timestamps()
+    }
+
     parameters {
         booleanParam(
             name: 'DESTROY_INFRASTRUCTURE',
@@ -32,7 +37,30 @@ pipeline {
         // ─────────────────────────────────────────
         stage('Clone Repository') {
             steps {
+                deleteDir()
                 checkout scm
+            }
+        }
+
+        stage('Prepare Build Agent') {
+            steps {
+                echo "============================================"
+                echo " Preparing Jenkins agent disk space"
+                echo "============================================"
+                sh '''
+                    rm -rf "$WORKSPACE/.terraform"
+                    rm -f /tmp/terraform-provider* /tmp/terraform*.tmp
+
+                    echo "Disk usage after workspace cleanup:"
+                    df -h "$WORKSPACE"
+
+                    available_kb=$(df -Pk "$WORKSPACE" | awk 'NR==2 {print $4}')
+                    if [ "$available_kb" -lt 1048576 ]; then
+                        echo "ERROR: Jenkins agent has less than 1 GiB available on the workspace filesystem."
+                        echo "Clean the agent's system/Jenkins caches or increase its disk size, then rerun the build."
+                        exit 1
+                    fi
+                '''
             }
         }
 
@@ -635,6 +663,9 @@ PYEOF
         }
         failure {
             echo "Pipeline FAILED — check the stage that errored above"
+        }
+        always {
+            deleteDir()
         }
     }
 }

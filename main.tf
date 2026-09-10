@@ -21,9 +21,9 @@ module "ec2" {
 
   ami_id = var.ami_id
 
-  subnet_id = module.vpc.public_subnet1_id
-iam_instance_profile = module.iam.instance_profile_name
-  security_group_id = module.security-group.sg_id
+  subnet_id            = module.vpc.public_subnet1_id
+  iam_instance_profile = module.iam.instance_profile_name
+  security_group_id    = module.security-group.sg_id
 }
 
 module "alb" {
