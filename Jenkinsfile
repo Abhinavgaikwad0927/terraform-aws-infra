@@ -574,7 +574,6 @@ PYEOF
 '''
     }
 }
-```groovy
 // ─────────────────────────────────────────
 // STAGE 18 — BACKUP PROJECT TO EXISTING S3
 // ─────────────────────────────────────────
@@ -648,8 +647,6 @@ stage('Backup Project to S3') {
         '''
     }
 }
-```
-
 
         // ─────────────────────────────────────────
         // STAGE 19 — TERRAFORM DESTROY (only if true)
