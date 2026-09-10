@@ -1,4 +1,36 @@
 ---
+- name: Install APT prerequisites
+  apt:
+    name:
+      - curl
+      - gnupg
+      - ca-certificates
+    state: present
+    update_cache: false
+
+- name: Create APT keyrings directory
+  file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download HashiCorp GPG key
+  get_url:
+    url: https://apt.releases.hashicorp.com/gpg
+    dest: /tmp/hashicorp.asc
+    mode: '0644'
+
+- name: Install HashiCorp GPG key
+  command:
+    cmd: gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg /tmp/hashicorp.asc
+    creates: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+- name: Configure HashiCorp APT repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com noble main"
+    filename: hashicorp
+    state: present
+
 - name: Update apt cache
   apt:
     update_cache: yes
@@ -14,5 +46,6 @@
   changed_when: false
   ignore_errors: true
 
-- debug:
+- name: Display Java version
+  debug:
     var: java_version.stderr_lines
