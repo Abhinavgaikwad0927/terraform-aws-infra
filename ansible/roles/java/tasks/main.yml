@@ -32,8 +32,26 @@
     state: present
 
 - name: Update apt cache
-  apt:
-    update_cache: yes
+  shell: |
+    set -o pipefail
+    apt-get update
+  args:
+    executable: /bin/bash
+  register: apt_update
+  changed_when: false
+
+- name: Show apt update output
+  debug:
+    msg:
+      - "STDOUT:"
+      - "{{ apt_update.stdout_lines }}"
+      - "STDERR:"
+      - "{{ apt_update.stderr_lines }}"
+
+- name: Fail if apt update failed
+  fail:
+    msg: "apt-get update failed. See output above."
+  when: apt_update.rc != 0
 
 - name: Install Java
   apt:
