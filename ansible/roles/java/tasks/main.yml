@@ -1,3 +1,4 @@
+---
 - name: Install APT prerequisites
   apt:
     name:
@@ -5,26 +6,34 @@
       - curl
       - gnupg
     state: present
-    update_cache: yes
+    update_cache: no
 
-- name: Remove existing HashiCorp repository
+- name: Create APT keyrings directory
   file:
-    path: /etc/apt/sources.list.d/hashicorp.list
-    state: absent
+    path: /usr/share/keyrings
+    state: directory
+    mode: "0755"
 
-- name: Remove existing HashiCorp keyring
-  file:
-    path: /usr/share/keyrings/hashicorp-archive-keyring.gpg
-    state: absent
+- name: Remove old HashiCorp repository files
+  shell: |
+    rm -f /etc/apt/sources.list.d/hashicorp*.list
+    rm -f /etc/apt/sources.list.d/hashicorp*.sources
+  changed_when: false
 
-- name: Download HashiCorp GPG key
+- name: Remove old HashiCorp keyrings
+  shell: |
+    rm -f /usr/share/keyrings/hashicorp*
+    rm -f /etc/apt/keyrings/hashicorp*
+  changed_when: false
+
+- name: Download HashiCorp repository key
   get_url:
     url: https://apt.releases.hashicorp.com/gpg
     dest: /tmp/hashicorp.gpg
     mode: "0644"
     force: true
 
-- name: Install HashiCorp GPG key
+- name: Convert HashiCorp key to keyring
   shell: |
     gpg --dearmor --yes \
       -o /usr/share/keyrings/hashicorp-archive-keyring.gpg \
@@ -37,20 +46,7 @@
     group: root
     mode: "0644"
 
-- name: Verify HashiCorp GPG key
-  command:
-    cmd: >
-      gpg --no-default-keyring
-      --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg
-      --fingerprint
-  register: hashicorp_key
-  changed_when: false
-
-- name: Display HashiCorp GPG fingerprint
-  debug:
-    var: hashicorp_key.stdout_lines
-
-- name: Configure HashiCorp repository
+- name: Configure HashiCorp APT repository
   copy:
     dest: /etc/apt/sources.list.d/hashicorp.list
     owner: root
@@ -67,3 +63,13 @@
   apt:
     name: openjdk-21-jdk
     state: present
+
+- name: Verify Java
+  command: java -version
+  register: java_version
+  changed_when: false
+  failed_when: false
+
+- name: Display Java version
+  debug:
+    var: java_version.stderr_lines
