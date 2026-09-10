@@ -93,9 +93,15 @@
     - name: Start Minikube
       become_user: ubuntu
       shell: |
-        minikube start --driver=docker
-      when: "'Running' not in minikube_status.stdout"
-
+        minikube start \
+        --driver=docker \
+        --memory=3000 \
+        --cpus=2
+     register: minikube_start
+     retries: 3
+     delay: 30
+     until: minikube_start.rc == 0
+     when: "'Running' not in minikube_status.stdout"
     # --------------------------------------------------
     # VERIFY KUBERNETES
     # --------------------------------------------------
