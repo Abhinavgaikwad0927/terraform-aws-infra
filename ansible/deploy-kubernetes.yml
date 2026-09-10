@@ -19,6 +19,7 @@
           - curl
           - conntrack
           - docker.io
+          - socat
         state: present
 
     - name: Start Docker
@@ -107,7 +108,7 @@
     # START MINIKUBE
     # ---------------------------------------------------------
 
-    - name: Start Minikube with application and monitoring ports
+    - name: Start Minikube
       become_user: ubuntu
       shell: |
         minikube start \
@@ -136,6 +137,128 @@
       delay: 10
       until: kubernetes_nodes.rc == 0
       changed_when: false
+
+    # ---------------------------------------------------------
+    # DISCOVER MINIKUBE HOST PORTS
+    # ---------------------------------------------------------
+
+    - name: Get Minikube Docker port mappings
+      shell: |
+        docker port minikube
+      register: minikube_port_output
+      changed_when: false
+
+    - name: Display Minikube port mappings
+      debug:
+        var: minikube_port_output.stdout_lines
+
+    - name: Extract application host port
+      shell: |
+        docker port minikube 30080/tcp | head -1 | sed 's/.*://'
+      register: app_host_port
+      changed_when: false
+
+    - name: Extract Prometheus host port
+      shell: |
+        docker port minikube 30090/tcp | head -1 | sed 's/.*://'
+      register: prometheus_host_port
+      changed_when: false
+
+    - name: Extract Grafana host port
+      shell: |
+        docker port minikube 30300/tcp | head -1 | sed 's/.*://'
+      register: grafana_host_port
+      changed_when: false
+
+    - name: Display discovered forwarding ports
+      debug:
+        msg:
+          - "Application: 30080 -> {{ app_host_port.stdout }}"
+          - "Prometheus: 30090 -> {{ prometheus_host_port.stdout }}"
+          - "Grafana: 30300 -> {{ grafana_host_port.stdout }}"
+
+    # ---------------------------------------------------------
+    # CREATE TCP FORWARDING SERVICES
+    # ---------------------------------------------------------
+
+    - name: Create application forwarding service
+      copy:
+        dest: /etc/systemd/system/minikube-app-forward.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Forward EC2 port 30080 to Minikube application
+          After=network.target docker.service
+          Requires=docker.service
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/socat TCP-LISTEN:30080,reuseaddr,fork TCP4:127.0.0.1:{{ app_host_port.stdout }}
+          Restart=always
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create Prometheus forwarding service
+      copy:
+        dest: /etc/systemd/system/minikube-prometheus-forward.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Forward EC2 port 30090 to Minikube Prometheus
+          After=network.target docker.service
+          Requires=docker.service
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/socat TCP-LISTEN:30090,reuseaddr,fork TCP4:127.0.0.1:{{ prometheus_host_port.stdout }}
+          Restart=always
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create Grafana forwarding service
+      copy:
+        dest: /etc/systemd/system/minikube-grafana-forward.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Forward EC2 port 30300 to Minikube Grafana
+          After=network.target docker.service
+          Requires=docker.service
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/socat TCP-LISTEN:30300,reuseaddr,fork TCP4:127.0.0.1:{{ grafana_host_port.stdout }}
+          Restart=always
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable application forwarding
+      systemd:
+        name: minikube-app-forward
+        enabled: yes
+        state: restarted
+
+    - name: Enable Prometheus forwarding
+      systemd:
+        name: minikube-prometheus-forward
+        enabled: yes
+        state: restarted
+
+    - name: Enable Grafana forwarding
+      systemd:
+        name: minikube-grafana-forward
+        enabled: yes
+        state: restarted
 
     # ---------------------------------------------------------
     # KUBERNETES FILES
@@ -199,7 +322,7 @@
       command:
         cmd: kubectl apply -f /home/ubuntu/kubernetes/prometheus-pod.yaml
 
-    - name: Restart Prometheus to load latest configuration
+    - name: Restart Prometheus
       become_user: ubuntu
       command:
         cmd: kubectl rollout restart deployment/prometheus
@@ -213,7 +336,7 @@
       command:
         cmd: kubectl apply -f /home/ubuntu/kubernetes/grafana-pod.yaml
 
-    - name: Restart Grafana to load latest configuration
+    - name: Restart Grafana
       become_user: ubuntu
       command:
         cmd: kubectl rollout restart deployment/grafana
@@ -238,7 +361,7 @@
         cmd: kubectl rollout status deployment/grafana --timeout=180s
 
     # ---------------------------------------------------------
-    # VERIFY
+    # VERIFY KUBERNETES
     # ---------------------------------------------------------
 
     - name: Check Kubernetes resources
@@ -253,15 +376,30 @@
         var: kubernetes_status.stdout_lines
 
     # ---------------------------------------------------------
-    # VERIFY NODEPORTS
+    # VERIFY FORWARDING
     # ---------------------------------------------------------
 
-    - name: Check Minikube published ports
-      shell: |
-        docker port minikube
-      register: minikube_ports
+    - name: Check application forwarding service
+      command:
+        cmd: systemctl is-active minikube-app-forward
+      register: app_forward_status
       changed_when: false
 
-    - name: Display Minikube published ports
+    - name: Check Prometheus forwarding service
+      command:
+        cmd: systemctl is-active minikube-prometheus-forward
+      register: prometheus_forward_status
+      changed_when: false
+
+    - name: Check Grafana forwarding service
+      command:
+        cmd: systemctl is-active minikube-grafana-forward
+      register: grafana_forward_status
+      changed_when: false
+
+    - name: Display forwarding status
       debug:
-        var: minikube_ports.stdout_lines
+        msg:
+          - "Application forwarding: {{ app_forward_status.stdout }}"
+          - "Prometheus forwarding: {{ prometheus_forward_status.stdout }}"
+          - "Grafana forwarding: {{ grafana_forward_status.stdout }}"
