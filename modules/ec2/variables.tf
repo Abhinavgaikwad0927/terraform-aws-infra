@@ -1,5 +1,5 @@
 variable "instance_type" {
-  default = "t3.micro"
+  default = "m7i-flex.large"
 }
 variable "iam_instance_profile" {
   description = "IAM instance profile attached to EC2"
