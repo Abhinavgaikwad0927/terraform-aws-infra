@@ -74,13 +74,54 @@
         cmd: install /tmp/minikube /usr/local/bin/minikube
       when: not minikube_binary.stat.exists
 
-    - name: Check Minikube status
+    # ---------------------------------------------------------
+    # CLEAN OLD / FAILED MINIKUBE
+    # ---------------------------------------------------------
+
+    - name: Delete existing Minikube cluster
       become_user: ubuntu
       shell: |
-        minikube status --output=json
-      register: minikube_status
+        minikube delete --all --purge
+      register: minikube_delete
       changed_when: false
       failed_when: false
+
+    # ---------------------------------------------------------
+    # CLEAN DOCKER DISK SPACE
+    # ---------------------------------------------------------
+
+    - name: Remove unused Docker containers images volumes
+      shell: |
+        docker system prune -af --volumes
+      register: docker_cleanup
+      changed_when: false
+      failed_when: false
+
+    - name: Remove unused APT packages and cache
+      shell: |
+        apt-get autoremove -y
+        apt-get clean
+        rm -rf /var/lib/apt/lists/*
+      changed_when: false
+      failed_when: false
+
+    - name: Check disk space before Minikube
+      shell: |
+        echo "===== ROOT DISK ====="
+        df -h /
+
+        echo "===== DOCKER DISK ====="
+        docker system df
+      register: disk_status
+      changed_when: false
+
+    - name: Display disk space
+      debug:
+        var: disk_status.stdout_lines
+
+    # ---------------------------------------------------------
+    # START MINIKUBE
+    # ---------------------------------------------------------
 
     - name: Start Minikube
       become_user: ubuntu
@@ -93,7 +134,6 @@
       retries: 3
       delay: 30
       until: minikube_start.rc == 0
-      when: "'Running' not in minikube_status.stdout"
 
     # ---------------------------------------------------------
     # WAIT FOR KUBERNETES
@@ -194,4 +234,3 @@
     - name: Display Pod Status
       debug:
         var: pod_status.stdout_lines
-
