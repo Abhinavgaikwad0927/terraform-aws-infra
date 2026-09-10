@@ -107,13 +107,17 @@
     # START MINIKUBE
     # ---------------------------------------------------------
 
-    - name: Start Minikube
+    - name: Start Minikube with application and monitoring ports
       become_user: ubuntu
       shell: |
         minikube start \
           --driver=docker \
           --memory=3000 \
-          --cpus=2
+          --cpus=2 \
+          --ports=30080 \
+          --ports=30090 \
+          --ports=30300 \
+          --listen-address=0.0.0.0
       register: minikube_start
       retries: 3
       delay: 30
@@ -195,6 +199,11 @@
       command:
         cmd: kubectl apply -f /home/ubuntu/kubernetes/prometheus-pod.yaml
 
+    - name: Restart Prometheus to load latest configuration
+      become_user: ubuntu
+      command:
+        cmd: kubectl rollout restart deployment/prometheus
+
     # ---------------------------------------------------------
     # GRAFANA
     # ---------------------------------------------------------
@@ -203,6 +212,11 @@
       become_user: ubuntu
       command:
         cmd: kubectl apply -f /home/ubuntu/kubernetes/grafana-pod.yaml
+
+    - name: Restart Grafana to load latest configuration
+      become_user: ubuntu
+      command:
+        cmd: kubectl rollout restart deployment/grafana
 
     # ---------------------------------------------------------
     # WAIT FOR DEPLOYMENTS
@@ -237,3 +251,17 @@
     - name: Display Kubernetes resources
       debug:
         var: kubernetes_status.stdout_lines
+
+    # ---------------------------------------------------------
+    # VERIFY NODEPORTS
+    # ---------------------------------------------------------
+
+    - name: Check Minikube published ports
+      shell: |
+        docker port minikube
+      register: minikube_ports
+      changed_when: false
+
+    - name: Display Minikube published ports
+      debug:
+        var: minikube_ports.stdout_lines
