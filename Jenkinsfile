@@ -222,6 +222,9 @@ EOF
         '''
     }
 }
+        // ─────────────────────────────────────────
+        // STAGE 9 — Wait for EC2 SSH
+        // ─────────────────────────────────────────
 stage('Wait for EC2 SSH') {
     steps {
         sshagent(credentials: ['jenkins-ec2-ssh']) {
@@ -233,7 +236,6 @@ stage('Wait for EC2 SSH') {
                 echo "============================================"
 
                 for i in $(seq 1 30); do
-
                     echo "SSH attempt $i/30"
 
                     if ansible all -i inventory.ini -m ping -o; then
@@ -255,7 +257,7 @@ stage('Wait for EC2 SSH') {
 }
 
       // ─────────────────────────────────────────
-        // STAGE 9 — Configure EC2 using Ansible
+        // STAGE 10 — Configure EC2 using Ansible
         // ─────────────────────────────────────────
 stage('Configure EC2 using Ansible') {
     when {
@@ -263,7 +265,7 @@ stage('Configure EC2 using Ansible') {
     }
     steps {
         echo "============================================"
-        echo " STAGE 8 — Configure EC2 using Ansible"
+        echo " STAGE 10 — Configure EC2 using Ansible"
         echo "============================================"
 
         sshagent(credentials: ['jenkins-ec2-ssh']) {
@@ -286,6 +288,10 @@ stage('Configure EC2 using Ansible') {
         }
     }
 }
+ // ─────────────────────────────────────────
+        // STAGE 11 — Deploy Kubernetes Pods
+        // ─────────────────────────────────────────
+
 stage('Deploy Kubernetes Pods') {
     when {
         expression {
@@ -306,6 +312,10 @@ stage('Deploy Kubernetes Pods') {
         }
     }
 }
+ // ─────────────────────────────────────────
+        // STAGE 12 — Verify Kubernetes Deployment
+        // ─────────────────────────────────────────
+
 stage('Verify Kubernetes Deployment') {
     when {
         expression {
@@ -327,6 +337,10 @@ stage('Verify Kubernetes Deployment') {
         }
     }
 }
+ // ─────────────────────────────────────────
+        // STAGE 13 — Get AWS account ID
+        // ─────────────────────────────────────────
+
 stage('Get AWS Account ID') {
     steps {
         script {
@@ -339,7 +353,10 @@ stage('Get AWS Account ID') {
         }
     }
 }
-      
+ // ─────────────────────────────────────────
+        // STAGE 14 — Login to Amazon ECR
+        // ─────────────────────────────────────────
+
 stage('Login to Amazon ECR') {
 
             steps {
@@ -358,6 +375,10 @@ stage('Login to Amazon ECR') {
             }
 
         }
+ // ─────────────────────────────────────────
+        // STAGE 15 — Get Terraform EC2 Public IP
+        // ─────────────────────────────────────────
+
         stage('Get Terraform EC2 Public IP') {
 
             steps {
@@ -378,7 +399,7 @@ stage('Login to Amazon ECR') {
         }
 
                 // ─────────────────────────────────────────
-        // STAGE 10 — SAVE TO DYNAMODB (only if false)
+        // STAGE 16 — SAVE TO DYNAMODB (only if false)
         // ─────────────────────────────────────────
         stage('Save Resources to DynamoDB') {
             when {
@@ -455,7 +476,7 @@ PYEOF
         }
 
         // ─────────────────────────────────────────
-// STAGE 11 — PRINT FROM DYNAMODB (only if false)
+// STAGE 17 — PRINT FROM DYNAMODB (only if false)
 // ─────────────────────────────────────────
 stage('Print All Resources from DynamoDB') {
     when {
@@ -553,8 +574,85 @@ PYEOF
 '''
     }
 }
+```groovy
+// ─────────────────────────────────────────
+// STAGE 18 — BACKUP PROJECT TO EXISTING S3
+// ─────────────────────────────────────────
+stage('Backup Project to S3') {
+    when {
+        expression {
+            return params.DESTROY_INFRASTRUCTURE == false
+        }
+    }
+
+    steps {
+        echo "============================================"
+        echo " STAGE 12 — Backing Up Project to S3"
+        echo "============================================"
+
+        sh '''
+            set -e
+
+            BUCKET="aabhinav-terraform-project-bucket-2026"
+            REGION="ap-south-1"
+
+            TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+            BACKUP_NAME="terraform-aws-infra-${TIMESTAMP}-build-${BUILD_NUMBER}.tar.gz"
+
+            echo "============================================"
+            echo "Checking existing S3 backup bucket..."
+            echo "Bucket: $BUCKET"
+            echo "============================================"
+
+            aws s3api head-bucket \
+                --bucket "$BUCKET" \
+                --region "$REGION"
+
+            echo "S3 bucket exists."
+
+            echo "============================================"
+            echo "Creating project backup archive..."
+            echo "============================================"
+
+            tar \
+                --exclude='.git' \
+                --exclude='.terraform' \
+                --exclude='target' \
+                --exclude='*.pem' \
+                --exclude='*.key' \
+                --exclude='*.tfstate' \
+                --exclude='*.tfstate.backup' \
+                -czf "/tmp/${BACKUP_NAME}" .
+
+            echo "Backup created:"
+            ls -lh "/tmp/${BACKUP_NAME}"
+
+            echo "============================================"
+            echo "Uploading backup to S3..."
+            echo "============================================"
+
+            aws s3 cp \
+                "/tmp/${BACKUP_NAME}" \
+                "s3://${BUCKET}/project-backups/${BACKUP_NAME}" \
+                --region "$REGION"
+
+            rm -f "/tmp/${BACKUP_NAME}"
+
+            echo "============================================"
+            echo " PROJECT BACKUP SUCCESSFUL"
+            echo "============================================"
+            echo "S3 Bucket : $BUCKET"
+            echo "S3 Object : project-backups/${BACKUP_NAME}"
+            echo "Build     : ${BUILD_NUMBER}"
+            echo "============================================"
+        '''
+    }
+}
+```
+
+
         // ─────────────────────────────────────────
-        // STAGE 12 — TERRAFORM DESTROY (only if true)
+        // STAGE 19 — TERRAFORM DESTROY (only if true)
         // ─────────────────────────────────────────
         stage('Terraform Destroy') {
             when {
@@ -574,7 +672,7 @@ PYEOF
         }
 
         // ─────────────────────────────────────────
-        // STAGE 13 — CLEAN DYNAMODB (only if true)
+        // STAGE 20 — CLEAN DYNAMODB (only if true)
         // ─────────────────────────────────────────
         stage('Clean DynamoDB Records') {
             when {
