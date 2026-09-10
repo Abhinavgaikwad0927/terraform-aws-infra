@@ -1,9 +1,122 @@
 ---
-- name: Deploy Kubernetes Pods
+- name: Install and Deploy Kubernetes
   hosts: servers
   become: yes
 
   tasks:
+
+    # --------------------------------------------------
+    # SYSTEM PREPARATION
+    # --------------------------------------------------
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Kubernetes prerequisites
+      apt:
+        name:
+          - curl
+          - conntrack
+          - docker.io
+        state: present
+
+    # --------------------------------------------------
+    # DOCKER
+    # --------------------------------------------------
+
+    - name: Start Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ubuntu user to Docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    # --------------------------------------------------
+    # KUBECTL
+    # --------------------------------------------------
+
+    - name: Check whether kubectl exists
+      stat:
+        path: /usr/local/bin/kubectl
+      register: kubectl_binary
+
+    - name: Download kubectl
+      shell: |
+        curl -L -o /tmp/kubectl \
+          "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      when: not kubectl_binary.stat.exists
+
+    - name: Install kubectl
+      command:
+        cmd: install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+      when: not kubectl_binary.stat.exists
+
+    # --------------------------------------------------
+    # MINIKUBE
+    # --------------------------------------------------
+
+    - name: Check whether Minikube exists
+      stat:
+        path: /usr/local/bin/minikube
+      register: minikube_binary
+
+    - name: Download Minikube
+      get_url:
+        url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        dest: /tmp/minikube
+        mode: '0755'
+      when: not minikube_binary.stat.exists
+
+    - name: Install Minikube
+      command:
+        cmd: install /tmp/minikube /usr/local/bin/minikube
+      when: not minikube_binary.stat.exists
+
+    # --------------------------------------------------
+    # START MINIKUBE
+    # --------------------------------------------------
+
+    - name: Check Minikube status
+      become_user: ubuntu
+      shell: |
+        minikube status --output=json
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+
+    - name: Start Minikube
+      become_user: ubuntu
+      shell: |
+        minikube start --driver=docker
+      when: "'Running' not in minikube_status.stdout"
+
+    # --------------------------------------------------
+    # VERIFY KUBERNETES
+    # --------------------------------------------------
+
+    - name: Wait for Kubernetes API
+      become_user: ubuntu
+      shell: |
+        kubectl get nodes
+      register: kubernetes_nodes
+      retries: 12
+      delay: 10
+      until: kubernetes_nodes.rc == 0
+      changed_when: false
+
+    - name: Display Kubernetes nodes
+      debug:
+        var: kubernetes_nodes.stdout_lines
+
+    # --------------------------------------------------
+    # COPY KUBERNETES FILES
+    # --------------------------------------------------
 
     - name: Create Kubernetes directory
       file:
@@ -11,7 +124,7 @@
         state: directory
         owner: ubuntu
         group: ubuntu
-        mode: "0755"
+        mode: '0755'
 
     - name: Copy Kubernetes files
       copy:
@@ -19,7 +132,11 @@
         dest: /home/ubuntu/kubernetes/
         owner: ubuntu
         group: ubuntu
-        mode: "0644"
+        mode: '0644'
+
+    # --------------------------------------------------
+    # ECR SECRET
+    # --------------------------------------------------
 
     - name: Create ECR secret
       become_user: ubuntu
@@ -32,10 +149,18 @@
       args:
         executable: /bin/bash
 
+    # --------------------------------------------------
+    # APPLICATION
+    # --------------------------------------------------
+
     - name: Deploy Application
       become_user: ubuntu
       command:
         cmd: kubectl apply -f /home/ubuntu/kubernetes/app-pod.yaml
+
+    # --------------------------------------------------
+    # PROMETHEUS
+    # --------------------------------------------------
 
     - name: Deploy Prometheus Config
       become_user: ubuntu
@@ -47,16 +172,25 @@
       command:
         cmd: kubectl apply -f /home/ubuntu/kubernetes/prometheus-pod.yaml
 
+    # --------------------------------------------------
+    # GRAFANA
+    # --------------------------------------------------
+
     - name: Deploy Grafana
       become_user: ubuntu
       command:
         cmd: kubectl apply -f /home/ubuntu/kubernetes/grafana-pod.yaml
+
+    # --------------------------------------------------
+    # VERIFY PODS
+    # --------------------------------------------------
 
     - name: Check Pods
       become_user: ubuntu
       command:
         cmd: kubectl get pods -o wide
       register: pod_status
+      changed_when: false
 
     - name: Display Pod Status
       debug:
