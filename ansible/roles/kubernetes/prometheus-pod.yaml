@@ -1,30 +1,53 @@
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 
 metadata:
   name: prometheus
-  labels:
-    app: prometheus
 
 spec:
+  replicas: 1
 
-  containers:
+  selector:
+    matchLabels:
+      app: prometheus
 
-    - name: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
 
-      image: prom/prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus
+          imagePullPolicy: IfNotPresent
 
-      ports:
-        - containerPort: 9090
+          ports:
+            - containerPort: 9090
 
-      volumeMounts:
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+
+      volumes:
         - name: prometheus-config
+          configMap:
+            name: prometheus-config
 
-          mountPath: /etc/prometheus
+---
+apiVersion: v1
+kind: Service
 
-  volumes:
+metadata:
+  name: prometheus
 
-    - name: prometheus-config
+spec:
+  type: NodePort
 
-      configMap:
-        name: prometheus-config
+  selector:
+    app: prometheus
+
+  ports:
+    - port: 9090
+      targetPort: 9090
+      nodePort: 30090

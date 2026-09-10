@@ -75,25 +75,23 @@
       when: not minikube_binary.stat.exists
 
     # ---------------------------------------------------------
-    # CLEAN OLD / FAILED MINIKUBE
+    # CLEAN OLD MINIKUBE
     # ---------------------------------------------------------
 
     - name: Delete existing Minikube cluster
       become_user: ubuntu
       shell: |
         minikube delete --all --purge
-      register: minikube_delete
       changed_when: false
       failed_when: false
 
     # ---------------------------------------------------------
-    # CLEAN DOCKER DISK SPACE
+    # CLEAN DISK
     # ---------------------------------------------------------
 
-    - name: Remove unused Docker containers images volumes
+    - name: Remove unused Docker resources
       shell: |
         docker system prune -af --volumes
-      register: docker_cleanup
       changed_when: false
       failed_when: false
 
@@ -104,20 +102,6 @@
         rm -rf /var/lib/apt/lists/*
       changed_when: false
       failed_when: false
-
-    - name: Check disk space before Minikube
-      shell: |
-        echo "===== ROOT DISK ====="
-        df -h /
-
-        echo "===== DOCKER DISK ====="
-        docker system df
-      register: disk_status
-      changed_when: false
-
-    - name: Display disk space
-      debug:
-        var: disk_status.stdout_lines
 
     # ---------------------------------------------------------
     # START MINIKUBE
@@ -148,10 +132,6 @@
       delay: 10
       until: kubernetes_nodes.rc == 0
       changed_when: false
-
-    - name: Display Kubernetes nodes
-      debug:
-        var: kubernetes_nodes.stdout_lines
 
     # ---------------------------------------------------------
     # KUBERNETES FILES
@@ -189,6 +169,15 @@
         executable: /bin/bash
 
     # ---------------------------------------------------------
+    # PROMETHEUS CONFIG
+    # ---------------------------------------------------------
+
+    - name: Deploy Prometheus Config
+      become_user: ubuntu
+      command:
+        cmd: kubectl apply -f /home/ubuntu/kubernetes/prometheus-config.yaml
+
+    # ---------------------------------------------------------
     # APPLICATION
     # ---------------------------------------------------------
 
@@ -200,11 +189,6 @@
     # ---------------------------------------------------------
     # PROMETHEUS
     # ---------------------------------------------------------
-
-    - name: Deploy Prometheus Config
-      become_user: ubuntu
-      command:
-        cmd: kubectl apply -f /home/ubuntu/kubernetes/prometheus-config.yaml
 
     - name: Deploy Prometheus
       become_user: ubuntu
@@ -221,16 +205,35 @@
         cmd: kubectl apply -f /home/ubuntu/kubernetes/grafana-pod.yaml
 
     # ---------------------------------------------------------
-    # VERIFY PODS
+    # WAIT FOR DEPLOYMENTS
     # ---------------------------------------------------------
 
-    - name: Check Pods
+    - name: Wait for application deployment
       become_user: ubuntu
       command:
-        cmd: kubectl get pods -o wide
-      register: pod_status
+        cmd: kubectl rollout status deployment/project-app --timeout=180s
+
+    - name: Wait for Prometheus deployment
+      become_user: ubuntu
+      command:
+        cmd: kubectl rollout status deployment/prometheus --timeout=180s
+
+    - name: Wait for Grafana deployment
+      become_user: ubuntu
+      command:
+        cmd: kubectl rollout status deployment/grafana --timeout=180s
+
+    # ---------------------------------------------------------
+    # VERIFY
+    # ---------------------------------------------------------
+
+    - name: Check Kubernetes resources
+      become_user: ubuntu
+      command:
+        cmd: kubectl get deployments,pods,services -o wide
+      register: kubernetes_status
       changed_when: false
 
-    - name: Display Pod Status
+    - name: Display Kubernetes resources
       debug:
-        var: pod_status.stdout_lines
+        var: kubernetes_status.stdout_lines
