@@ -1,7 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
+
 metadata:
   name: prometheus-config
+
 data:
   prometheus.yml: |
     global:
@@ -9,13 +11,21 @@ data:
 
     scrape_configs:
 
+      # Prometheus itself
       - job_name: prometheus
         static_configs:
           - targets:
               - localhost:9090
 
+      # Java application
       - job_name: project-app
         metrics_path: /metrics
         static_configs:
           - targets:
               - project-app:8080
+
+      # EC2 / Kubernetes host
+      - job_name: node-exporter
+        static_configs:
+          - targets:
+              - node-exporter:9100
