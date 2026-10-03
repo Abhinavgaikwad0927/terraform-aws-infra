@@ -398,8 +398,35 @@ stage('Login to Amazon ECR') {
 
         }
 
+// ─────────────────────────────────────────
+// STAGE 16 — DISPLAY APPLICATION URLS
+// ─────────────────────────────────────────
+stage('Display Application URLs') {
+
+    when {
+        expression {
+            return params.DESTROY_INFRASTRUCTURE == false
+        }
+    }
+
+    steps {
+        echo "============================================"
+        echo "       APPLICATION ENDPOINTS"
+        echo "============================================"
+
+        echo "Application : http://${env.PUBLIC_IP}:30080"
+        echo "Prometheus  : http://${env.PUBLIC_IP}:30090"
+        echo "Grafana     : http://${env.PUBLIC_IP}:30300"
+
+        echo "============================================"
+        echo "Application URL : http://${env.PUBLIC_IP}:30080"
+        echo "Prometheus URL  : http://${env.PUBLIC_IP}:30090"
+        echo "Grafana URL     : http://${env.PUBLIC_IP}:30300"
+        echo "============================================"
+    }
+}
                 // ─────────────────────────────────────────
-        // STAGE 16 — SAVE TO DYNAMODB (only if false)
+        // STAGE 17 — SAVE TO DYNAMODB (only if false)
         // ─────────────────────────────────────────
         stage('Save Resources to DynamoDB') {
             when {
@@ -476,7 +503,7 @@ PYEOF
         }
 
         // ─────────────────────────────────────────
-// STAGE 17 — PRINT FROM DYNAMODB (only if false)
+// STAGE 18 — PRINT FROM DYNAMODB (only if false)
 // ─────────────────────────────────────────
 stage('Print All Resources from DynamoDB') {
     when {
@@ -586,7 +613,7 @@ stage('Backup Project to S3') {
 
     steps {
         echo "============================================"
-        echo " STAGE 12 — Backing Up Project to S3"
+        echo " STAGE 19 — Backing Up Project to S3"
         echo "============================================"
 
         sh '''
@@ -649,7 +676,7 @@ stage('Backup Project to S3') {
 }
 
         // ─────────────────────────────────────────
-        // STAGE 19 — TERRAFORM DESTROY (only if true)
+        // STAGE 20 — TERRAFORM DESTROY (only if true)
         // ─────────────────────────────────────────
         stage('Terraform Destroy') {
             when {
@@ -669,7 +696,7 @@ stage('Backup Project to S3') {
         }
 
         // ─────────────────────────────────────────
-        // STAGE 20 — CLEAN DYNAMODB (only if true)
+        // STAGE 21 — CLEAN DYNAMODB (only if true)
         // ─────────────────────────────────────────
         stage('Clean DynamoDB Records') {
             when {
