@@ -1,6 +1,10 @@
 - name: Install and Deploy Kubernetes
   hosts: servers
   become: yes
+    vars:
+    aws_region: ap-south-1
+    ecr_repository: project-ecr
+    image_tag: latest
 
   tasks:
 
@@ -283,16 +287,44 @@
     # ECR SECRET
     # ---------------------------------------------------------
 
-    - name: Create ECR secret
+    
+    - name: Discover AWS account ID dynamically
+      become_user: ubuntu
+      command:
+        cmd: aws sts get-caller-identity --query Account --output text
+      register: aws_account_id
+      changed_when: false
+
+    
+    - name: Update application manifest with dynamic ECR image
+      become_user: ubuntu
+      ansible.builtin.replace:
+        path: /home/ubuntu/kubernetes/app-pod.yaml
+        regexp: '^(\s*)image:\s*.*project-ecr:.*$'
+        replace: '\1image: "{{ ecr_image }}"'
+
+    - name: Build ECR image URI
+      set_fact:
+        ecr_registry: "{{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
+        ecr_image: "{{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_repository }}:{{ image_tag }}"
+
+    - name: Refresh ECR pull secret
       become_user: ubuntu
       shell: |
+        set -o pipefail
+        ECR_PASSWORD="$(aws ecr get-login-password --region '{{ aws_region }}')" || exit 1
         kubectl create secret docker-registry ecr-secret \
-          --docker-server=559137157049.dkr.ecr.ap-south-1.amazonaws.com \
+          --docker-server="{{ ecr_registry }}" \
           --docker-username=AWS \
-          --docker-password="$(aws ecr get-login-password --region ap-south-1)" \
+          --docker-password="$ECR_PASSWORD" \
           --dry-run=client -o yaml | kubectl apply -f -
+        RESULT=$?
+        unset ECR_PASSWORD
+        exit "$RESULT"
       args:
         executable: /bin/bash
+      no_log: true
+
 
     # ---------------------------------------------------------
     # PROMETHEUS CONFIG
