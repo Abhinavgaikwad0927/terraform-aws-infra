@@ -238,7 +238,7 @@ stage('Configure EC2 using Ansible') {
         echo " STAGE 10 — Configure EC2 using Ansible"
         echo "============================================"
 
-        sshagent(credentials: ['jenkins-ec2-ssh']) {
+        sshagent(credentials: ['jenkins']) {
 
             sh '''
                 export ANSIBLE_HOST_KEY_CHECKING=False
@@ -270,7 +270,7 @@ stage('Deploy Kubernetes Pods') {
     }
 
     steps {
-        sshagent(credentials: ['jenkins-ec2-ssh']) {
+        sshagent(credentials: ['jenkins']) {
 
             sh '''
                 export ANSIBLE_HOST_KEY_CHECKING=False
@@ -294,7 +294,7 @@ stage('Verify Kubernetes Deployment') {
     }
 
     steps {
-        sshagent(credentials: ['jenkins-ec2-ssh']) {
+        sshagent(credentials: ['jenkins']) {
 
             sh '''
                 export ANSIBLE_HOST_KEY_CHECKING=False
