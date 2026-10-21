@@ -287,15 +287,18 @@
     # ECR SECRET
     # ---------------------------------------------------------
 
-    
     - name: Discover AWS account ID dynamically
       become_user: ubuntu
-      command:
+      ansible.builtin.command:
         cmd: aws sts get-caller-identity --query Account --output text
       register: aws_account_id
       changed_when: false
 
-    
+    - name: Build ECR image URI
+      ansible.builtin.set_fact:
+        ecr_registry: "{{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
+        ecr_image: "{{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_repository }}:{{ image_tag }}"
+
     - name: Update application manifest with dynamic ECR image
       become_user: ubuntu
       ansible.builtin.replace:
@@ -303,14 +306,9 @@
         regexp: '^(\s*)image:\s*.*project-ecr:.*$'
         replace: '\1image: "{{ ecr_image }}"'
 
-    - name: Build ECR image URI
-      set_fact:
-        ecr_registry: "{{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
-        ecr_image: "{{ aws_account_id.stdout }}.dkr.ecr.{{ aws_region }}.amazonaws.com/{{ ecr_repository }}:{{ image_tag }}"
-
     - name: Refresh ECR pull secret
       become_user: ubuntu
-      shell: |
+      ansible.builtin.shell: |
         set -o pipefail
         ECR_PASSWORD="$(aws ecr get-login-password --region '{{ aws_region }}')" || exit 1
         kubectl create secret docker-registry ecr-secret \
@@ -324,9 +322,8 @@
       args:
         executable: /bin/bash
       no_log: true
-
-
-    # ---------------------------------------------------------
+      
+      # ---------------------------------------------------------
     # PROMETHEUS CONFIG
     # ---------------------------------------------------------
 
