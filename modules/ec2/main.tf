@@ -2,7 +2,7 @@ resource "aws_instance" "jenkins" {
 
   ami           = var.ami_id
   instance_type = var.instance_type
-  key_name      = "jenkins"
+  key_name      = "gitlab"
   subnet_id = var.subnet_id
 iam_instance_profile = var.iam_instance_profile
   vpc_security_group_ids = [
