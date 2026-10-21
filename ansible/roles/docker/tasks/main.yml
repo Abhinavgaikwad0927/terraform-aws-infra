@@ -1,25 +1,48 @@
 ---
-- name: Install Docker
-  apt:
-    name: docker.io
+- name: Remove conflicting Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: absent
+    purge: false
+    update_cache: false
+
+- name: Update apt package cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install Docker and containerd
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - containerd
     state: present
 
-- name: Enable Docker
-  service:
+- name: Enable and start Docker
+  ansible.builtin.service:
     name: docker
     state: started
-    enabled: yes
+    enabled: true
+
+- name: Verify Docker installation
+  ansible.builtin.command: docker --version
+  register: docker_version
+  changed_when: false
+
+- name: Display Docker version
+  ansible.builtin.debug:
+    var: docker_version.stdout
 
 - name: Add ubuntu user to docker group
   user:
     name: ubuntu
     groups: docker
     append: yes
-
-- name: Verify Docker
-  command: docker --version
-  register: docker_version
-  changed_when: false
 
 - debug:
     var: docker_version.stdout
