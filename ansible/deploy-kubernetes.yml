@@ -1,7 +1,7 @@
 - name: Install and Deploy Kubernetes
   hosts: servers
   become: yes
-    vars:
+  vars:
     aws_region: ap-south-1
     ecr_repository: project-ecr
     image_tag: latest
