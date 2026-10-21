@@ -287,7 +287,7 @@
       become_user: ubuntu
       shell: |
         kubectl create secret docker-registry ecr-secret \
-          --docker-server=025232685400.dkr.ecr.ap-south-1.amazonaws.com \
+          --docker-server=559137157049.dkr.ecr.ap-south-1.amazonaws.com \
           --docker-username=AWS \
           --docker-password="$(aws ecr get-login-password --region ap-south-1)" \
           --dry-run=client -o yaml | kubectl apply -f -
