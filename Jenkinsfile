@@ -589,7 +589,7 @@ stage('Backup Project to S3') {
         sh '''
             set -e
 
-            BUCKET="aabhinav-terraform-project-bucket-2026"
+            BUCKET="projectbucket1-2026"
             REGION="ap-south-1"
 
             TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
